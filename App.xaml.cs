@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Interop;
@@ -35,12 +36,15 @@ namespace DesktopFences
         private const string SingleInstanceMutexName = @"Local\FluidFences.SingleInstance";
         private const string SurfaceSignalName       = @"Local\FluidFences.Surface";
         private const string SettingsSignalName      = @"Local\FluidFences.OpenSettings";
+        private const string ExitSignalName          = @"Local\FluidFences.Exit";
 
         private static Mutex? _singleInstanceMutex;
         private static EventWaitHandle? _surfaceSignal;
         private static EventWaitHandle? _settingsSignal;
+        private static EventWaitHandle? _exitSignal;
 
         private const string SettingsArgument = "--settings";
+        private const string ExitArgument     = "--exit";
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -50,10 +54,6 @@ namespace DesktopFences
                 System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Warning;
                 System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Add(new System.Diagnostics.TextWriterTraceListener(Path.Combine(ConfigFolder, "wpf_trace.log")));
                 
-                AppDomain.CurrentDomain.FirstChanceException += (s, args) => {
-                    try { File.AppendAllText(Path.Combine(ConfigFolder, "debug_exceptions.log"), $"[FirstChance] {args.Exception.Message}\n{args.Exception.StackTrace}\n"); } catch { }
-                };
-                
                 this.DispatcherUnhandledException += (s, args) => {
                     try { File.AppendAllText(Path.Combine(ConfigFolder, "debug_exceptions.log"), $"[Unhandled] {args.Exception.Message}\n{args.Exception.StackTrace}\n"); } catch { }
                 };
@@ -61,26 +61,30 @@ namespace DesktopFences
 
             bool wantsSettings = e.Args.Any(a =>
                 string.Equals(a, SettingsArgument, StringComparison.OrdinalIgnoreCase));
+            bool wantsExit = e.Args.Any(a =>
+                string.Equals(a, ExitArgument, StringComparison.OrdinalIgnoreCase));
 
             if (!ClaimSingleInstance())
             {
-
-                SignalRunningInstance(wantsSettings);
+                if (wantsExit)
+                {
+                    SignalExitRunningInstance();
+                }
+                else
+                {
+                    SignalRunningInstance(wantsSettings);
+                }
 
                 Environment.Exit(0);
                 return;
             }
 
-            try
+            if (wantsExit)
             {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", false);
-                if (key?.GetValue("FluidFences") != null)
-                {
-                    using RegistryKey? serializeKey = Registry.CurrentUser.CreateSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize");
-                    serializeKey?.SetValue("StartupDelayInMS", 0, RegistryValueKind.DWord);
-                }
+                Environment.Exit(0);
+                return;
             }
-            catch { }
+
 
             string oldFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopFences");
             if (Directory.Exists(oldFolder))
@@ -171,14 +175,28 @@ namespace DesktopFences
             }
         }
 
+        private static void SignalExitRunningInstance()
+        {
+            try
+            {
+                using EventWaitHandle handle = EventWaitHandle.OpenExisting(ExitSignalName);
+                handle.Set();
+            }
+            catch (Exception ex)
+            {
+                LogError("SignalExitRunningInstance", ex);
+            }
+        }
+
         private void StartSurfaceListener()
         {
             try
             {
                 _surfaceSignal  = new EventWaitHandle(false, EventResetMode.AutoReset, SurfaceSignalName);
                 _settingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, SettingsSignalName);
+                _exitSignal     = new EventWaitHandle(false, EventResetMode.AutoReset, ExitSignalName);
 
-                var handles = new WaitHandle[] { _surfaceSignal, _settingsSignal };
+                var handles = new WaitHandle[] { _surfaceSignal, _settingsSignal, _exitSignal };
 
                 var listener = new Thread(() =>
                 {
@@ -187,9 +205,19 @@ namespace DesktopFences
                         try
                         {
                             int index = WaitHandle.WaitAny(handles);
-                            Dispatcher.BeginInvoke(index == 0
-                                ? new Action(SurfaceFromSecondLaunch)
-                                : new Action(OpenSettings));
+                            if (index == 0)
+                            {
+                                Dispatcher.BeginInvoke(new Action(SurfaceFromSecondLaunch));
+                            }
+                            else if (index == 1)
+                            {
+                                Dispatcher.BeginInvoke(new Action(OpenSettings));
+                            }
+                            else if (index == 2)
+                            {
+                                Dispatcher.BeginInvoke(new Action(ExitApp));
+                                return;
+                            }
                         }
                         catch (Exception ex) { LogError("SurfaceListener", ex); return; }
                     }
@@ -309,13 +337,17 @@ namespace DesktopFences
 
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
         {
+            DesktopFences.MainWindow.InvalidateScreenCache();
+            ThemeUtility.InvalidateWallpaperCache();
+
             _ = System.Threading.Tasks.Task.Delay(1000).ContinueWith(_ =>
             {
                 Dispatcher.InvokeAsync(() =>
                 {
-                    foreach (Window window in Current.Windows)
+                    var fences = Current.Windows.OfType<MainWindow>().ToArray();
+                    foreach (var fence in fences)
                     {
-                        if (window is MainWindow { IsLoaded: true } fence) fence.ClampToScreen();
+                        if (fence.IsLoaded) fence.ClampToScreen();
                     }
                 });
             });
@@ -324,7 +356,7 @@ namespace DesktopFences
         private void ComponentDispatcher_ThreadPreprocessMessage(ref MSG msg, ref bool handled)
         {
             const int WM_HOTKEY = 0x0312;
-            if (msg.message == WM_HOTKEY && msg.wParam.ToInt32() == HOTKEY_ID)
+            if (msg.message == WM_HOTKEY && (nint)msg.wParam == HOTKEY_ID)
             {
                 ToggleZenMode();
                 handled = true;
@@ -343,16 +375,17 @@ namespace DesktopFences
             }
         }
 
-        public async void SaveCurrentLayout()
+        public static async Task SaveCurrentLayoutAsync()
         {
             try
             {
                 string snapshotPath = Path.Combine(ConfigFolder, "snapshot.json");
                 List<SnapshotData> snapshots = [];
 
-                foreach (Window window in Current.Windows)
+                var fences = Current.Windows.OfType<MainWindow>().ToArray();
+                foreach (var fence in fences)
                 {
-                    if (window is MainWindow { Visibility: Visibility.Visible } fence)
+                    if (fence.Visibility == Visibility.Visible)
                     {
                         snapshots.Add(new SnapshotData
                         {
@@ -370,14 +403,14 @@ namespace DesktopFences
                     }
                 }
 
-                string tempPath = snapshotPath + ".tmp";
+                string tempPath = $"{snapshotPath}.{Guid.NewGuid():N}.tmp";
                 await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(snapshots, _jsonOptions));
                 File.Move(tempPath, snapshotPath, overwrite: true);
             }
             catch (Exception ex) { LogError("SaveCurrentLayout", ex); }
         }
 
-        public async void RestoreLayoutSnapshot()
+        public static async Task RestoreLayoutSnapshotAsync()
         {
             try
             {
@@ -389,11 +422,12 @@ namespace DesktopFences
 
                 if (snapshots is not null)
                 {
+                    var fences = Current.Windows.OfType<MainWindow>().ToArray();
                     foreach (var snap in snapshots)
                     {
-                        foreach (Window window in Current.Windows)
+                        foreach (var fence in fences)
                         {
-                            if (window is MainWindow fence && fence.GetFenceId() == snap.FenceId)
+                            if (fence.GetFenceId() == snap.FenceId)
                             {
                                 fence.RestoreSnapshot(snap);
                                 break;
@@ -405,7 +439,7 @@ namespace DesktopFences
             catch (Exception ex) { LogError("RestoreLayoutSnapshot", ex); }
         }
 
-        private async void RestoreSavedFences()
+        private static async void RestoreSavedFences()
         {
             try
             {
@@ -464,9 +498,9 @@ namespace DesktopFences
             _trayIcon.DoubleClick += (s, e) => OpenSettings();
         }
 
-        private void CreateNewFence() { MainWindow newFence = new(Guid.NewGuid().ToString()); newFence.Show(); }
+        private static void CreateNewFence() { MainWindow newFence = new(Guid.NewGuid().ToString()); newFence.Show(); }
 
-        private void CreateNewPortal()
+        private static void CreateNewPortal()
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select a folder to mirror in the Portal Fence" };
             if (dialog.ShowDialog() == true)
@@ -491,6 +525,7 @@ namespace DesktopFences
                 if (existing.WindowState == WindowState.Minimized)
                     existing.WindowState = WindowState.Normal;
 
+                existing.SwitchToTab("ThemeEditorGrid");
                 existing.Activate();
                 existing.Topmost = true;
                 existing.Topmost = false;
@@ -499,6 +534,7 @@ namespace DesktopFences
             }
 
             SettingsWindow settings = new(null);
+            settings.SwitchToTab("ThemeEditorGrid");
             settings.Show();
             settings.Activate();
         }
@@ -526,6 +562,7 @@ namespace DesktopFences
 
         protected override void OnExit(ExitEventArgs e)
         {
+            ComponentDispatcher.ThreadPreprocessMessage -= ComponentDispatcher_ThreadPreprocessMessage;
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             NativeMethods.UnregisterHotKey(IntPtr.Zero, HOTKEY_ID);
             _trayIcon?.Dispose();
@@ -534,6 +571,7 @@ namespace DesktopFences
             {
                 _surfaceSignal?.Dispose();
                 _settingsSignal?.Dispose();
+                _exitSignal?.Dispose();
                 _singleInstanceMutex?.ReleaseMutex();
                 _singleInstanceMutex?.Dispose();
             }
@@ -542,6 +580,7 @@ namespace DesktopFences
             {
                 _surfaceSignal = null;
                 _settingsSignal = null;
+                _exitSignal = null;
                 _singleInstanceMutex = null;
             }
 

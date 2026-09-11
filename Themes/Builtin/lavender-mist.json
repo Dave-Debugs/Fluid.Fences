@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "lavender-mist",
+  "name": "Lavender Mist",
+  "author": "DaveDebugs",
+  "category": "Pastel",
+  "baseTheme": "Light",
+  "pattern": "VORTEX_SWIRL",
+  "loopFile": "lavender-mist.mp4",
+  "colors": {
+    "primary": "#FF7E22CE",
+    "primaryHover": "#FF973BE7",
+    "primaryPressed": "#FF6509B5",
+    "secondary": "#FFEC4899",
+    "accent": "#FFEC4899",
+    "background": "#EBFAF5FF",
+    "surface": "#1A7E22CE",
+    "surfaceSubtle": "#0D7E22CE",
+    "surfaceHover": "#2E7E22CE",
+    "surfaceSelected": "#477E22CE",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#337E22CE",
+    "focusRing": "#FF7E22CE",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF7E22CE",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFEC4899",
+    "selectionFill": "#337E22CE",
+    "selectionStroke": "#FF7E22CE",
+    "dropTarget": "#66EC4899",
+    "scrollThumb": "#407E22CE",
+    "scrollThumbHover": "#737E22CE",
+    "scrollThumbActive": "#997E22CE"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

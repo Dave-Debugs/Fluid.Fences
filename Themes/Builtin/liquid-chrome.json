@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "liquid-chrome",
+  "name": "Liquid Chrome",
+  "author": "DaveDebugs",
+  "category": "Luxury",
+  "baseTheme": "Dark",
+  "pattern": "LIQUID_CHROME",
+  "loopFile": "liquid-chrome.mp4",
+  "colors": {
+    "primary": "#FFE2E8F0",
+    "primaryHover": "#FFFBFFFF",
+    "primaryPressed": "#FFC9CFD7",
+    "secondary": "#FF38BDF8",
+    "accent": "#FF38BDF8",
+    "background": "#EB0A0D14",
+    "surface": "#22E2E8F0",
+    "surfaceSubtle": "#11E2E8F0",
+    "surfaceHover": "#44E2E8F0",
+    "surfaceSelected": "#66E2E8F0",
+    "header": "#F202050C",
+    "border": "#B3E2E8F0",
+    "borderSubtle": "#40E2E8F0",
+    "focusRing": "#FFE2E8F0",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#0A0D14",
+    "glyph": "#FFE2E8F0",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF38BDF8",
+    "selectionFill": "#40E2E8F0",
+    "selectionStroke": "#FFE2E8F0",
+    "dropTarget": "#6638BDF8",
+    "scrollThumb": "#40E2E8F0",
+    "scrollThumbHover": "#73E2E8F0",
+    "scrollThumbActive": "#99E2E8F0"
+  },
+  "shape": {
+    "cornerRadius": 16,
+    "cornerRadiusSmall": 8,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "nordic-mirage",
+  "name": "Nordic Mirage",
+  "author": "DaveDebugs",
+  "category": "Light",
+  "baseTheme": "Light",
+  "pattern": "QUANTUM_NEBULA",
+  "loopFile": "nordic-mirage.mp4",
+  "colors": {
+    "primary": "#FF2563EB",
+    "primaryHover": "#FF3E7CFF",
+    "primaryPressed": "#FF0C4AD2",
+    "secondary": "#FF0D9488",
+    "accent": "#FF0D9488",
+    "background": "#EBF1F5F9",
+    "surface": "#1A2563EB",
+    "surfaceSubtle": "#0D2563EB",
+    "surfaceHover": "#2E2563EB",
+    "surfaceSelected": "#472563EB",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#332563EB",
+    "focusRing": "#FF2563EB",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF2563EB",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF0D9488",
+    "selectionFill": "#332563EB",
+    "selectionStroke": "#FF2563EB",
+    "dropTarget": "#660D9488",
+    "scrollThumb": "#402563EB",
+    "scrollThumbHover": "#732563EB",
+    "scrollThumbActive": "#992563EB"
+  },
+  "shape": {
+    "cornerRadius": 16,
+    "cornerRadiusSmall": 8,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

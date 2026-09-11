@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "nordic-daylight",
+  "name": "Nordic Daylight",
+  "author": "DaveDebugs",
+  "category": "Minimal",
+  "baseTheme": "Light",
+  "pattern": "FROST_CAUSTIC",
+  "loopFile": "nordic-daylight.mp4",
+  "colors": {
+    "primary": "#FF0284C7",
+    "primaryHover": "#FF1B9DE0",
+    "primaryPressed": "#FF006BAE",
+    "secondary": "#FF64748B",
+    "accent": "#FF64748B",
+    "background": "#EBF8FAFC",
+    "surface": "#1A0284C7",
+    "surfaceSubtle": "#0D0284C7",
+    "surfaceHover": "#2E0284C7",
+    "surfaceSelected": "#470284C7",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#330284C7",
+    "focusRing": "#FF0284C7",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF0284C7",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF64748B",
+    "selectionFill": "#330284C7",
+    "selectionStroke": "#FF0284C7",
+    "dropTarget": "#6664748B",
+    "scrollThumb": "#400284C7",
+    "scrollThumbHover": "#730284C7",
+    "scrollThumbActive": "#990284C7"
+  },
+  "shape": {
+    "cornerRadius": 16,
+    "cornerRadiusSmall": 8,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

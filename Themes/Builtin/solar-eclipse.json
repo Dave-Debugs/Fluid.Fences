@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "solar-eclipse",
+  "name": "Solar Eclipse",
+  "author": "DaveDebugs",
+  "category": "Energy",
+  "baseTheme": "Dark",
+  "pattern": "NEON_PULSEWAVE",
+  "loopFile": "solar-eclipse.mp4",
+  "colors": {
+    "primary": "#FFFB923C",
+    "primaryHover": "#FFFFAB55",
+    "primaryPressed": "#FFE27923",
+    "secondary": "#FFE11D48",
+    "accent": "#FFE11D48",
+    "background": "#EB140808",
+    "surface": "#22FB923C",
+    "surfaceSubtle": "#11FB923C",
+    "surfaceHover": "#44FB923C",
+    "surfaceSelected": "#66FB923C",
+    "header": "#F20C0000",
+    "border": "#B3FB923C",
+    "borderSubtle": "#40FB923C",
+    "focusRing": "#FFFB923C",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#140808",
+    "glyph": "#FFFB923C",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFE11D48",
+    "selectionFill": "#40FB923C",
+    "selectionStroke": "#FFFB923C",
+    "dropTarget": "#66E11D48",
+    "scrollThumb": "#40FB923C",
+    "scrollThumbHover": "#73FB923C",
+    "scrollThumbActive": "#99FB923C"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

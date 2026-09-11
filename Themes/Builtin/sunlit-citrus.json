@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "sunlit-citrus",
+  "name": "Sunlit Citrus",
+  "author": "DaveDebugs",
+  "category": "Vibrant",
+  "baseTheme": "Light",
+  "pattern": "KALEIDO_CRYSTAL",
+  "loopFile": "sunlit-citrus.mp4",
+  "colors": {
+    "primary": "#FFCA8A04",
+    "primaryHover": "#FFE3A31D",
+    "primaryPressed": "#FFB17100",
+    "secondary": "#FF16A34A",
+    "accent": "#FF16A34A",
+    "background": "#EBFEFCE8",
+    "surface": "#1ACA8A04",
+    "surfaceSubtle": "#0DCA8A04",
+    "surfaceHover": "#2ECA8A04",
+    "surfaceSelected": "#47CA8A04",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33CA8A04",
+    "focusRing": "#FFCA8A04",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFCA8A04",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF16A34A",
+    "selectionFill": "#33CA8A04",
+    "selectionStroke": "#FFCA8A04",
+    "dropTarget": "#6616A34A",
+    "scrollThumb": "#40CA8A04",
+    "scrollThumbHover": "#73CA8A04",
+    "scrollThumbActive": "#99CA8A04"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

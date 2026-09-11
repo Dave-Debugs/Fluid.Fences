@@ -27,7 +27,36 @@ namespace DesktopFences
         private static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string? windowTitle);
 
         private static readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp", ".ico" };
+        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp" };
+
+        private static System.Drawing.Rectangle[]? _cachedWorkingAreas;
+        private static readonly object _workingAreaLock = new();
+
+        public static void InvalidateScreenCache()
+        {
+            lock (_workingAreaLock)
+            {
+                _cachedWorkingAreas = null;
+            }
+        }
+
+        private static System.Drawing.Rectangle[] GetCachedWorkingAreas()
+        {
+            lock (_workingAreaLock)
+            {
+                if (_cachedWorkingAreas == null)
+                {
+                    var screens = System.Windows.Forms.Screen.AllScreens;
+                    var areas = new System.Drawing.Rectangle[screens.Length];
+                    for (int i = 0; i < screens.Length; i++)
+                    {
+                        areas[i] = screens[i].WorkingArea;
+                    }
+                    _cachedWorkingAreas = areas;
+                }
+                return _cachedWorkingAreas;
+            }
+        }
 
         public enum DockState { Floating, Top, Bottom, Left, Right }
 
@@ -75,6 +104,7 @@ namespace DesktopFences
         private string? _pendingPortalPath;
         private bool _resourcesReleased;
         private HwndSourceHook? _wndProcHook;
+        private HwndSource? _hwndSource;
         private long _portalRefreshGeneration;
         private System.Windows.Threading.DispatcherTimer? _portalRetryTimer;
 
@@ -193,22 +223,47 @@ namespace DesktopFences
             SaveFenceState();
         }
 
-        public void ClampToScreen()
+        private Rect GetCurrentScreenWorkingAreaLogical()
         {
             var helper = new WindowInteropHelper(this);
             var screen = System.Windows.Forms.Screen.FromHandle(helper.Handle);
+            if (screen == null)
+            {
+                return new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight);
+            }
 
-            if (screen == null) return;
+            var workArea = screen.WorkingArea;
+            try
+            {
+                if (PresentationSource.FromVisual(this) != null)
+                {
+                    var relTopLeft = PointFromScreen(new System.Windows.Point(workArea.Left, workArea.Top));
+                    var relBottomRight = PointFromScreen(new System.Windows.Point(workArea.Right, workArea.Bottom));
+                    double left = this.Left + relTopLeft.X;
+                    double top = this.Top + relTopLeft.Y;
+                    double width = relBottomRight.X - relTopLeft.X;
+                    double height = relBottomRight.Y - relTopLeft.Y;
+                    return new Rect(left, top, Math.Max(0, width), Math.Max(0, height));
+                }
+            }
+            catch
+            {
+            }
 
             double dpiX = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
             double dpiY = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+            return new Rect(workArea.Left / dpiX, workArea.Top / dpiY, workArea.Width / dpiX, workArea.Height / dpiY);
+        }
 
-            double logicalWidth = screen.WorkingArea.Width / dpiX;
-            double logicalHeight = screen.WorkingArea.Height / dpiY;
-            double logicalLeft = screen.WorkingArea.Left / dpiX;
-            double logicalTop = screen.WorkingArea.Top / dpiY;
-            double logicalRight = screen.WorkingArea.Right / dpiX;
-            double logicalBottom = screen.WorkingArea.Bottom / dpiY;
+        public void ClampToScreen()
+        {
+            Rect workArea = GetCurrentScreenWorkingAreaLogical();
+            double logicalWidth = workArea.Width;
+            double logicalHeight = workArea.Height;
+            double logicalLeft = workArea.Left;
+            double logicalTop = workArea.Top;
+            double logicalRight = workArea.Right;
+            double logicalBottom = workArea.Bottom;
 
             bool changed = false;
 
@@ -381,18 +436,19 @@ namespace DesktopFences
             }
         }
 
-        private static void ApplyAcrylicToHwnd(IntPtr hwnd, Color color, double opacity)
+        private static unsafe void ApplyAcrylicToHwnd(IntPtr hwnd, Color color, double opacity)
         {
             if (hwnd == IntPtr.Zero) return;
             byte a = (byte)(opacity * 255);
             uint gradientColor = (uint)((a << 24) | (color.B << 16) | (color.G << 8) | color.R);
             var accent = new NativeMethods.AccentPolicy { AccentState = NativeMethods.AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND, GradientColor = gradientColor };
-            var accentStructSize = Marshal.SizeOf(accent);
-            var accentPtr = Marshal.AllocHGlobal(accentStructSize);
-            Marshal.StructureToPtr(accent, accentPtr, false);
-            var data = new NativeMethods.WindowCompositionAttributeData { Attribute = NativeMethods.WindowCompositionAttribute.WCA_ACCENT_POLICY, SizeOfData = accentStructSize, Data = accentPtr };
+            var data = new NativeMethods.WindowCompositionAttributeData
+            {
+                Attribute = NativeMethods.WindowCompositionAttribute.WCA_ACCENT_POLICY,
+                SizeOfData = (nuint)sizeof(NativeMethods.AccentPolicy),
+                Data = (nint)(&accent)
+            };
             NativeMethods.SetWindowCompositionAttribute(hwnd, ref data);
-            Marshal.FreeHGlobal(accentPtr);
             int cornerPreference = (int)NativeMethods.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND;
             NativeMethods.DwmSetWindowAttribute(hwnd, (int)NativeMethods.DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPreference, sizeof(int));
         }
@@ -461,32 +517,6 @@ namespace DesktopFences
             MainBorder.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
         }
 
-        private void ContextMenu_Opened_ApplyBlur(object sender, RoutedEventArgs e)
-        {
-            if (sender is ContextMenu menu)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (PresentationSource.FromVisual(menu) is HwndSource source && source.Handle != IntPtr.Zero)
-                        ApplyAcrylicToHwnd(source.Handle, Color.FromRgb(26, 26, 26), 0.8);
-                }), DispatcherPriority.Background);
-            }
-        }
-
-        private void Submenu_Opened_ApplyBlur(object sender, RoutedEventArgs e)
-        {
-            if (e.OriginalSource is MenuItem menuItem)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (menuItem.Template.FindName("PART_Popup", menuItem) is System.Windows.Controls.Primitives.Popup popup && popup.Child != null)
-                    {
-                        if (PresentationSource.FromVisual(popup.Child) is HwndSource source && source.Handle != IntPtr.Zero)
-                            ApplyAcrylicToHwnd(source.Handle, Color.FromRgb(26, 26, 26), 0.8);
-                    }
-                }), DispatcherPriority.Background);
-            }
-        }
 
         public void SetInitialTab(FenceTab tab)
         {
@@ -513,12 +543,13 @@ namespace DesktopFences
                     if (JsonSerializer.Deserialize<FenceData>(json) is FenceData data)
                     {
                         this.Left = data.Left; this.Top = data.Top;
-                        bool isOnScreen = false;
-                        foreach (var screen in System.Windows.Forms.Screen.AllScreens)
-                        {
-                            if (screen.WorkingArea.Contains((int)this.Left, (int)this.Top) || screen.WorkingArea.Contains((int)(this.Left + data.Width), (int)this.Top))
-                            { isOnScreen = true; break; }
-                        }
+                        Rect virtualScreen = new(
+                            SystemParameters.VirtualScreenLeft,
+                            SystemParameters.VirtualScreenTop,
+                            SystemParameters.VirtualScreenWidth,
+                            SystemParameters.VirtualScreenHeight);
+                        Rect fenceBounds = new(data.Left, data.Top, data.Width > 0 ? data.Width : 250, data.Height > 0 ? data.Height : 300);
+                        bool isOnScreen = virtualScreen.IntersectsWith(fenceBounds);
                         if (!isOnScreen) { this.Left = 100; this.Top = 100; }
 
                         _isRolledUp = data.IsRolledUp;
@@ -583,6 +614,48 @@ namespace DesktopFences
             await PerformDiskWriteAsync();
         }
 
+        private void PerformDiskWriteSynchronous()
+        {
+            if (_isDeleted || _loadFailed || TitleText is null) return;
+            try
+            {
+                SaveCurrentTabState();
+                FenceData data = new()
+                {
+                    Left = this.Left,
+                    Top = this.Top,
+                    Width = this.Width,
+                    Height = this.Height,
+                    IsRolledUp = _isRolledUp,
+                    ExpandedHeight = _expandedHeight,
+                    ExpandedWidth = _expandedWidth,
+                    ExpandedLeft = _expandedLeft,
+                    ExpandedTop = _expandedTop,
+                    Tabs = _tabs,
+                    ActiveTabIndex = _activeTabIndex,
+                    Title = TitleText.Text,
+                    HexColor = $"#{_currentFenceColor.R:X2}{_currentFenceColor.G:X2}{_currentFenceColor.B:X2}",
+                    Opacity = _currentOpacity,
+                    IconSize = CurrentIconSize,
+                    ShowSearch = ShowSearch,
+                    AutoMatchColor = _autoMatchColor,
+                    ColorSource = _colorSource,
+                    GhostModeOverride = _ghostModeOverride
+                };
+
+                string tempPath = $"{_saveFilePath}.{Guid.NewGuid():N}.tmp";
+                string saveDir = Path.GetDirectoryName(_saveFilePath)!;
+                Directory.CreateDirectory(saveDir);
+
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(data, _jsonOptions));
+                File.Move(tempPath, _saveFilePath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                LogError("PerformDiskWriteSynchronous", ex);
+            }
+        }
+
         private async Task PerformDiskWriteAsync()
         {
             if (_isDeleted || _loadFailed || TitleText is null) return;
@@ -612,7 +685,7 @@ namespace DesktopFences
                     GhostModeOverride = _ghostModeOverride
                 };
 
-                string tempPath = _saveFilePath + ".tmp";
+                string tempPath = $"{_saveFilePath}.{Guid.NewGuid():N}.tmp";
                 string saveDir = Path.GetDirectoryName(_saveFilePath)!;
                 Directory.CreateDirectory(saveDir);
 
@@ -622,9 +695,6 @@ namespace DesktopFences
             catch (Exception ex)
             {
                 LogError("PerformDiskWriteAsync", ex);
-
-                try { if (File.Exists(_saveFilePath + ".tmp")) File.Delete(_saveFilePath + ".tmp"); }
-                catch {  }
             }
         }
 
@@ -797,12 +867,7 @@ namespace DesktopFences
 
                 if (_isRolledUp && _isTemporarilyRevealed)
                 {
-                    Point mousePos = new Point(System.Windows.Forms.Cursor.Position.X, System.Windows.Forms.Cursor.Position.Y);
-                    double dpiX = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-                    double dpiY = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-                    Rect bounds = new Rect(this.Left * dpiX, this.Top * dpiY, this.Width * dpiX, this.Height * dpiY);
-
-                    if (!bounds.Contains(mousePos))
+                    if (!this.IsMouseOver)
                     {
                         AnimateRollUp();
                         _isTemporarilyRevealed = false;
@@ -952,7 +1017,7 @@ namespace DesktopFences
                 }
                 else { this.Left = _expandedLeft; this.Top = _expandedTop; }
                 SaveFenceState();
-                if (Application.Current is App myApp) myApp.SaveCurrentLayout();
+                _ = App.SaveCurrentLayoutAsync();
             }
         }
 
@@ -980,7 +1045,7 @@ namespace DesktopFences
 
             if (wasRolledUp) { _isRolledUp = true; _isTemporarilyRevealed = true; }
             SaveFenceState();
-            if (Application.Current is App myApp) myApp.SaveCurrentLayout();
+            _ = App.SaveCurrentLayoutAsync();
         }
 
         private void Resize_Left(object sender, MouseButtonEventArgs e) { e.Handled = true; StartNativeResize(1); }
@@ -1016,7 +1081,7 @@ namespace DesktopFences
             renameBox.LostFocus += (s2, e2) => { CommitTitle(); };
         }
 
-        private static System.Windows.Media.Effects.Effect BuildLabelHalo()
+        private static System.Windows.Media.Effects.DropShadowEffect BuildLabelHalo()
         {
             System.Windows.Media.Color text = Colors.White;
             if (Application.Current?.TryFindResource("CustomTextPrimaryColor") is System.Windows.Media.Color c)
@@ -1171,8 +1236,47 @@ namespace DesktopFences
         private void Menu_NewTab_Click(object sender, RoutedEventArgs e) { AddTabBtn_Click(sender, e); }
         private void Menu_DeleteFence_Click(object sender, RoutedEventArgs e) { if (MessageBox.Show("Permanently delete this fence?", "Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes) DashboardDelete(); }
         private void Menu_RollUp_Click(object sender, RoutedEventArgs e) { ToggleRollUp(); }
-        private void Menu_Sort_Click(object sender, RoutedEventArgs e) { if (sender is not MenuItem clickedSort || clickedSort.Tag is null) return; _saveSortMethod = clickedSort.Tag.ToString() ?? "None"; ApplySorting(); SaveFenceState(); }
-        private void Menu_IconSize_Click(object sender, RoutedEventArgs e) { if (sender is not MenuItem clickedItem || clickedItem.Tag is null) return; string tagStr = clickedItem.Tag.ToString() ?? ""; if (tagStr == "Default") { CurrentIconSize = 48; } else if (double.TryParse(tagStr, out double newSize)) { CurrentIconSize = newSize; } ApplySorting(); SaveFenceState(); }
+        private void Menu_Sort_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem clickedSort || clickedSort.Tag is null) return;
+            _saveSortMethod = clickedSort.Tag.ToString() ?? "None";
+            UpdateViewMenuCheckmarks();
+            ApplySorting();
+            SaveFenceState();
+        }
+
+        private void Menu_IconSize_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem clickedItem || clickedItem.Tag is null) return;
+            string tagStr = clickedItem.Tag.ToString() ?? "";
+            if (tagStr == "Default") { CurrentIconSize = 48; }
+            else if (double.TryParse(tagStr, out double newSize)) { CurrentIconSize = newSize; }
+            UpdateViewMenuCheckmarks();
+            ApplySorting();
+            SaveFenceState();
+        }
+
+        private void UpdateViewMenuCheckmarks()
+        {
+            if (MenuSortBy is not null)
+            {
+                foreach (var item in MenuSortBy.Items.OfType<MenuItem>())
+                {
+                    item.IsCheckable = true;
+                    item.IsChecked = string.Equals(item.Tag as string, _saveSortMethod, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (MenuIconSize is not null)
+            {
+                string currentSizeTag = ((int)CurrentIconSize).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                foreach (var item in MenuIconSize.Items.OfType<MenuItem>())
+                {
+                    item.IsCheckable = true;
+                    item.IsChecked = string.Equals(item.Tag as string, currentSizeTag, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
         private void Menu_Settings_Click(object sender, RoutedEventArgs e) { SettingsWindow settings = new(this) { Owner = this }; settings.ShowDialog(); }
         private void Menu_EditColor_Click(object sender, RoutedEventArgs e) { SettingsWindow settings = new(this) { Owner = this }; settings.SwitchToTab("ThemeEditorGrid"); settings.ShowDialog(); }
         private void Menu_NewPortal_Click(object sender, RoutedEventArgs e)
@@ -1223,7 +1327,7 @@ namespace DesktopFences
 
             try
             {
-                string[] files = await Task.Run(() => Directory.GetFiles(_portalPath));
+                string[] files = await Task.Run(() => Directory.GetFileSystemEntries(_portalPath));
                 _currentFiles.Clear();
                 _currentFiles.AddRange(files);
 
@@ -1236,16 +1340,17 @@ namespace DesktopFences
                 var watcher = new FileSystemWatcher(_portalPath)
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName,
+                    InternalBufferSize = 65536,
                     EnableRaisingEvents = true
                 };
                 watcher.Created += Portal_FileChanged;
                 watcher.Deleted += Portal_FileChanged;
                 watcher.Renamed += Portal_FileChanged;
-                watcher.Error   += (_, _) => Dispatcher.Invoke(() =>
+                watcher.Error   += (_, _) => Dispatcher.InvokeAsync(() =>
                 {
                     DisposePortalWatcher();
                     SchedulePortalReconnect();
-                });
+                }, System.Windows.Threading.DispatcherPriority.Normal);
 
                 _portalWatcher = watcher;
             }
@@ -1334,7 +1439,7 @@ namespace DesktopFences
             long currentGen = System.Threading.Interlocked.Increment(ref _portalRefreshGeneration);
             try
             {
-                string[] newFiles = await Task.Run(() => Directory.GetFiles(_portalPath));
+                string[] newFiles = await Task.Run(() => Directory.GetFileSystemEntries(_portalPath));
                 if (currentGen != System.Threading.Interlocked.Read(ref _portalRefreshGeneration)) return;
 
                 var currentSet = new HashSet<string>(_currentFiles, StringComparer.OrdinalIgnoreCase);
@@ -1384,7 +1489,6 @@ namespace DesktopFences
                 item.Content = grid;
 
                 ContextMenu menu = new ContextMenu();
-                menu.Opened += ContextMenu_Opened_ApplyBlur;
 
                 menu.Opened += (s, e) => _isContextMenuOpen = true;
                 menu.Closed += (s, e) => HandleMenuClosed();
@@ -1949,7 +2053,12 @@ namespace DesktopFences
                 foreach (string file in files) { try { if (!_isPortal) { string vaultedPath = MoveToVault(file); if (!_currentFiles.Contains(vaultedPath)) processedFiles.Add(vaultedPath); } else { string fileName = Path.GetFileName(file); string dest = Path.Combine(_portalPath, fileName); if (file != dest && !File.Exists(dest) && !Directory.Exists(dest)) { if (Directory.Exists(file)) Directory.Move(file, dest); else File.Move(file, dest); } if (!_currentFiles.Contains(dest)) processedFiles.Add(dest); } } catch { if (!_currentFiles.Contains(file)) processedFiles.Add(file); } }
                 int extFinalIndex = _currentFiles.Count; if (targetPath is not null) { extFinalIndex = _currentFiles.IndexOf(targetPath); if (extFinalIndex < 0) extFinalIndex = _currentFiles.Count; }
                 foreach (string pf in processedFiles) { _currentFiles.Insert(extFinalIndex, pf); extFinalIndex++; }
-                _saveSortMethod = "Custom"; ApplySorting(); SaveFenceState();
+                if (string.IsNullOrEmpty(_saveSortMethod) || _saveSortMethod == "None")
+                {
+                    _saveSortMethod = "Custom";
+                }
+                ApplySorting();
+                SaveFenceState();
                 if (!string.IsNullOrEmpty(sourceId) && sourceId != FenceId) e.Effects = DragDropEffects.Move; else e.Effects = DragDropEffects.None;
             }
         }
@@ -2006,45 +2115,36 @@ namespace DesktopFences
             }
             catch (Exception ex) { LogError($"Async Icon Failure: {currentFilePath}", ex); }
 
-            ContextMenu rightClickMenu = new(); rightClickMenu.Opened += ContextMenu_Opened_ApplyBlur; rightClickMenu.AddHandler(MenuItem.SubmenuOpenedEvent, new RoutedEventHandler(Submenu_Opened_ApplyBlur));
+            ContextMenu rightClickMenu = new();
             MenuItem renameItem = new() { Header = "Rename File" }; MenuItem removeItem = new() { Header = "Remove from Fence" };
             removeItem.Click += (s, args) => { if (_isPortal) { if (MessageBox.Show("This is a Folder Portal.\n\nDeleting items here will send the actual files on your computer to the Recycle Bin. Are you sure you want to delete?", "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; } if (_selectedItems.Count > 1 && _selectedItems.Contains(itemContainer)) { foreach (StackPanel selectedPanel in _selectedItems.ToList()) { if (selectedPanel.ToolTip is string path) RemoveFileFromVaultAndList(path); } } else { RemoveFileFromVaultAndList(currentFilePath); } ClearSelection(); ApplySorting(); SaveFenceState(); };
 
             void TriggerRename()
             {
                 textBlock.Visibility = Visibility.Collapsed;
-                TextBox renameBox = new() { Text = textBlock.Text, Width = containerWidth, Margin = new Thickness(-5, 0, -5, 0), BorderThickness = new Thickness(1), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(2) };
-            ApplyInlineEditorTheme(renameBox);
+                TextBox renameBox = new()
+                {
+                    Text = textBlock.Text,
+                    Width = containerWidth,
+                    Margin = new Thickness(-5, 0, -5, 0),
+                    BorderThickness = new Thickness(1),
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    Padding = new Thickness(2)
+                };
+                ApplyInlineEditorTheme(renameBox);
                 itemContainer.Children.Add(renameBox);
-                renameBox.Focus();
-                renameBox.SelectAll();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    renameBox.Focus();
+                    Keyboard.Focus(renameBox);
+                    renameBox.SelectAll();
+                }), DispatcherPriority.Input);
+
                 bool isHandlingRename = false;
 
-                void CommitRename()
+                void EndRenameEditor()
                 {
-                    if (isHandlingRename) return;
-                    isHandlingRename = true;
-                    try
-                    {
-                        string? dir = Path.GetDirectoryName(currentFilePath);
-                        string ext = Path.GetExtension(currentFilePath);
-                        if (dir is not null)
-                        {
-                            string newPath = Path.Combine(dir, renameBox.Text + ext);
-                            if (currentFilePath != newPath && !File.Exists(newPath) && !Directory.Exists(newPath))
-                            {
-                                if (Directory.Exists(currentFilePath)) Directory.Move(currentFilePath, newPath);
-                                else File.Move(currentFilePath, newPath);
-                                _currentFiles.Remove(currentFilePath);
-                                _currentFiles.Add(newPath);
-                                ApplySorting();
-                                SaveFenceState();
-                                return;
-                            }
-                        }
-                    }
-                    catch { }
-
                     if (itemContainer.Children.Contains(renameBox))
                     {
                         itemContainer.Children.Remove(renameBox);
@@ -2052,7 +2152,143 @@ namespace DesktopFences
                     }
                 }
 
-                renameBox.KeyDown += (s2, e2) => { if (e2.Key == Key.Enter) { CommitRename(); } else if (e2.Key == Key.Escape) { isHandlingRename = true; if (itemContainer.Children.Contains(renameBox)) { itemContainer.Children.Remove(renameBox); textBlock.Visibility = Visibility.Visible; } } };
+                void CommitRename()
+                {
+                    if (isHandlingRename) return;
+                    isHandlingRename = true;
+                    try
+                    {
+                        string proposedName = renameBox.Text.Trim();
+                        string currentName = textBlock.Text.Trim();
+
+                        if (string.Equals(proposedName, currentName, StringComparison.Ordinal))
+                        {
+                            EndRenameEditor();
+                            return;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(proposedName) &&
+                            proposedName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0 &&
+                            !proposedName.Contains('/') && !proposedName.Contains('\\') &&
+                            proposedName != "." && proposedName != "..")
+                        {
+                            string? dir = Path.GetDirectoryName(currentFilePath);
+                            bool isDirectory = Directory.Exists(currentFilePath);
+                            string ext = isDirectory ? string.Empty : Path.GetExtension(currentFilePath);
+                            if (dir is not null)
+                            {
+                                string newPath = Path.GetFullPath(Path.Combine(dir, proposedName + ext));
+                                string fullDir = Path.GetFullPath(dir);
+
+                                if (newPath.StartsWith(fullDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(Path.GetDirectoryName(newPath), fullDir, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    bool isCaseOnlyChange = string.Equals(currentFilePath, newPath, StringComparison.OrdinalIgnoreCase);
+
+                                    bool isDestinationInUseByFence = !isCaseOnlyChange && (
+                                        _currentFiles.Any(f => string.Equals(f, newPath, StringComparison.OrdinalIgnoreCase)) ||
+                                        _tabs.Any(t => t.Files.Any(f => string.Equals(f, newPath, StringComparison.OrdinalIgnoreCase)))
+                                    );
+
+                                    if (isDestinationInUseByFence)
+                                    {
+                                        MessageBox.Show(
+                                            $"An item named '{proposedName}' already exists in this fence.\n\nPlease choose a different name.",
+                                            "Cannot Rename",
+                                            MessageBoxButton.OK,
+                                            MessageBoxImage.Warning);
+
+                                        isHandlingRename = false;
+                                        Dispatcher.BeginInvoke(new Action(() =>
+                                        {
+                                            renameBox.Focus();
+                                            renameBox.SelectAll();
+                                        }), DispatcherPriority.Input);
+                                        return;
+                                    }
+
+                                    bool targetExistsOnDisk = isDirectory ? Directory.Exists(newPath) : File.Exists(newPath);
+
+                                    if (targetExistsOnDisk && !isCaseOnlyChange)
+                                    {
+                                        if (_isPortal)
+                                        {
+                                            if (MessageBox.Show(
+                                                $"A file named '{proposedName}{ext}' already exists in this folder.\n\nDo you want to replace it?",
+                                                "Confirm Rename",
+                                                MessageBoxButton.YesNo,
+                                                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                                            {
+                                                isHandlingRename = false;
+                                                Dispatcher.BeginInvoke(new Action(() =>
+                                                {
+                                                    renameBox.Focus();
+                                                    renameBox.SelectAll();
+                                                }), DispatcherPriority.Input);
+                                                return;
+                                            }
+                                            SendToRecycleBin(newPath);
+                                        }
+                                        else
+                                        {
+                                            try { SendToRecycleBin(newPath); } catch { }
+                                            try { if (File.Exists(newPath)) File.Delete(newPath); } catch { }
+                                        }
+                                    }
+
+                                    if (isDirectory)
+                                    {
+                                        if (isCaseOnlyChange)
+                                        {
+                                            string tempPath = Path.Combine(dir, $"{proposedName}_{Guid.NewGuid():N}{ext}");
+                                            Directory.Move(currentFilePath, tempPath);
+                                            Directory.Move(tempPath, newPath);
+                                        }
+                                        else
+                                        {
+                                            Directory.Move(currentFilePath, newPath);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        File.Move(currentFilePath, newPath, overwrite: true);
+                                    }
+
+                                    int fileIndex = _currentFiles.IndexOf(currentFilePath);
+                                    if (fileIndex >= 0) _currentFiles[fileIndex] = newPath;
+                                    else _currentFiles.Add(newPath);
+
+                                    SaveCurrentTabState();
+                                    ApplySorting();
+                                    SaveFenceState();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError($"Rename Failed: {currentFilePath}", ex);
+                        MessageBox.Show($"Could not rename item: {ex.Message}", "Rename Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+
+                    EndRenameEditor();
+                }
+
+                renameBox.KeyDown += (s2, e2) =>
+                {
+                    if (e2.Key == Key.Enter)
+                    {
+                        e2.Handled = true;
+                        CommitRename();
+                    }
+                    else if (e2.Key == Key.Escape)
+                    {
+                        e2.Handled = true;
+                        isHandlingRename = true;
+                        EndRenameEditor();
+                    }
+                };
                 renameBox.LostFocus += (s2, e2) => { CommitRename(); };
             }
 
@@ -2063,7 +2299,43 @@ namespace DesktopFences
             itemContainer.PreviewMouseLeftButtonDown += (s, args) => { this.Focus(); dragStartPoint = args.GetPosition(null); bool isCtrlPressed = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl); if (isCtrlPressed) { if (_selectedItems.Contains(itemContainer)) { itemContainer.Background = System.Windows.Media.Brushes.Transparent; _selectedItems.Remove(itemContainer); } else { itemContainer.Background = _highlightBrush; _selectedItems.Add(itemContainer); } } else if (!_selectedItems.Contains(itemContainer)) { ClearSelection(); itemContainer.Background = _highlightBrush; _selectedItems.Add(itemContainer); } };
             itemContainer.PreviewMouseRightButtonDown += (s, args) => { if (!_selectedItems.Contains(itemContainer)) { ClearSelection(); itemContainer.Background = _highlightBrush; _selectedItems.Add(itemContainer); } };
             itemContainer.PreviewMouseMove += (s, args) => { if (args.LeftButton == MouseButtonState.Pressed && dragStartPoint.HasValue) { System.Windows.Point currentPoint = args.GetPosition(null); if (Math.Abs(currentPoint.X - dragStartPoint.Value.X) > SystemParameters.MinimumHorizontalDragDistance || Math.Abs(currentPoint.Y - dragStartPoint.Value.Y) > SystemParameters.MinimumVerticalDragDistance) { string[] draggedFiles; if (_selectedItems.Contains(itemContainer) && _selectedItems.Count > 1) { draggedFiles = _selectedItems.Select(panel => panel.ToolTip.ToString()!).ToArray(); } else { draggedFiles = [currentFilePath]; } DataObject dragData = new(DataFormats.FileDrop, draggedFiles); dragData.SetData("FenceSourceId", FenceId); DragDropEffects result = DragDrop.DoDragDrop(itemContainer, dragData, DragDropEffects.Move | DragDropEffects.Copy); if (result == DragDropEffects.Move) { foreach (string f in draggedFiles) _currentFiles.Remove(f); ClearSelection(); ApplySorting(); SaveFenceState(); } dragStartPoint = null; } } };
-            itemContainer.MouseDown += (s, args) => { if (args.ClickCount == 2 && args.ChangedButton == MouseButton.Left) { if (File.Exists(currentFilePath) || Directory.Exists(currentFilePath)) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = currentFilePath, UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show($"Could not open file.\nError: {ex.Message}", "Launch Error"); } } else { MessageBox.Show("This file or folder no longer exists.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning); _currentFiles.Remove(currentFilePath); RefreshIconUI(); SaveFenceState(); } } };
+            itemContainer.MouseDown += (s, args) =>
+            {
+                if (args.ClickCount == 2 && args.ChangedButton == MouseButton.Left)
+                {
+                    if (File.Exists(currentFilePath) || Directory.Exists(currentFilePath))
+                    {
+                        try
+                        {
+                            if (_isPortal)
+                            {
+                                string ext = Path.GetExtension(currentFilePath).ToLowerInvariant();
+                                string[] dangerousExts = [".exe", ".com", ".msi", ".msc", ".cpl", ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".ws", ".hta", ".scr", ".pif", ".reg", ".jar", ".appx", ".msix", ".scf"];
+                                if (dangerousExts.Contains(ext))
+                                {
+                                    if (MessageBox.Show($"\"{Path.GetFileName(currentFilePath)}\" is an executable or script.\n\nAre you sure you want to run this file from this Folder Portal?", "Security Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                                        return;
+                                }
+                            }
+                            string? workDir = Path.GetDirectoryName(currentFilePath);
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = currentFilePath,
+                                WorkingDirectory = string.IsNullOrEmpty(workDir) ? string.Empty : workDir,
+                                UseShellExecute = true
+                            });
+                        }
+                        catch (Exception ex) { MessageBox.Show($"Could not open file.\nError: {ex.Message}", "Launch Error"); }
+                    }
+                    else
+                    {
+                        MessageBox.Show("This file or folder no longer exists.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        _currentFiles.Remove(currentFilePath);
+                        RefreshIconUI();
+                        SaveFenceState();
+                    }
+                }
+            };
         }
 
         private static object? _wshShell;
@@ -2134,16 +2406,25 @@ namespace DesktopFences
                 if (shell is null) return shortcutPath;
 
                 var shortcut = shell.CreateShortcut(shortcutPath);
-
-                string iconLocation = shortcut.IconLocation;
-                if (!string.IsNullOrEmpty(iconLocation))
+                try
                 {
-                    string[] parts = iconLocation.Split(',');
-                    if (parts.Length > 0 && File.Exists(parts[0])) return parts[0];
-                }
+                    string iconLocation = shortcut.IconLocation;
+                    if (!string.IsNullOrEmpty(iconLocation))
+                    {
+                        string[] parts = iconLocation.Split(',');
+                        if (parts.Length > 0 && File.Exists(parts[0])) return parts[0];
+                    }
 
-                string targetPath = shortcut.TargetPath;
-                if (File.Exists(targetPath) || Directory.Exists(targetPath)) return targetPath;
+                    string targetPath = shortcut.TargetPath;
+                    if (File.Exists(targetPath) || Directory.Exists(targetPath)) return targetPath;
+                }
+                finally
+                {
+                    if (shortcut is not null && Marshal.IsComObject(shortcut))
+                    {
+                        try { Marshal.ReleaseComObject(shortcut); } catch { }
+                    }
+                }
             }
             catch (Exception ex) { LogError($"Shortcut Resolve Failed: {shortcutPath}", ex); }
 
@@ -2183,7 +2464,7 @@ namespace DesktopFences
                     if (!string.IsNullOrEmpty(iconFile))
                     {
                         iconFile = Environment.ExpandEnvironmentVariables(iconFile);
-                        if (File.Exists(iconFile))
+                        if (!iconFile.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase) && !iconFile.StartsWith("//", StringComparison.OrdinalIgnoreCase) && File.Exists(iconFile))
                         {
                             uint sizeRequest = (uint)((16 << 16) | 256);
                             int res = NativeMethods.SHDefExtractIcon(iconFile, iconIndex, 0, out IntPtr hIconL, out IntPtr hIconS, sizeRequest);
@@ -2213,9 +2494,16 @@ namespace DesktopFences
                     IntPtr result = NativeMethods.SHGetFileInfo(filePath, 0, ref shinfo, (uint)Marshal.SizeOf(shinfo), 0x000000100 | 0x000000000);
                     if (result != IntPtr.Zero && shinfo.hIcon != IntPtr.Zero)
                     {
-                        ImageSource imgSrc = Imaging.CreateBitmapSourceFromHIcon(shinfo.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                        imgSrc.Freeze();
-                        NativeMethods.DestroyIcon(shinfo.hIcon);
+                        ImageSource imgSrc;
+                        try
+                        {
+                            imgSrc = Imaging.CreateBitmapSourceFromHIcon(shinfo.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                            imgSrc.Freeze();
+                        }
+                        finally
+                        {
+                            NativeMethods.DestroyIcon(shinfo.hIcon);
+                        }
                         return imgSrc;
                     }
                 }
@@ -2245,7 +2533,6 @@ namespace DesktopFences
                     finally
                     {
                         if (hbitmap != IntPtr.Zero) NativeMethods.DeleteObject(hbitmap);
-                        if (factory != null) Marshal.ReleaseComObject(factory);
                     }
                 }
             }
@@ -2310,14 +2597,20 @@ namespace DesktopFences
             var helper = new WindowInteropHelper(this); IntPtr myWindowHandle = helper.Handle; IntPtr exStyle = NativeMethods.GetWindowLongPtr(myWindowHandle, NativeMethods.GWL_EXSTYLE);
             NativeMethods.SetWindowLongPtr(myWindowHandle, NativeMethods.GWL_EXSTYLE, new IntPtr(exStyle.ToInt64() | NativeMethods.WS_EX_TOOLWINDOW));
 
-            if (HwndSource.FromHwnd(myWindowHandle) is HwndSource source) { _wndProcHook = new HwndSourceHook(WndProc); source.AddHook(_wndProcHook); }
+            _hwndSource = HwndSource.FromHwnd(myWindowHandle);
+            if (_hwndSource is not null) { _wndProcHook = new HwndSourceHook(WndProc); _hwndSource.AddHook(_wndProcHook); }
 
             this.PreviewKeyDown += Window_PreviewKeyDown; this.PreviewMouseDown += Window_PreviewMouseDown;
             IconPanel.MouseRightButtonDown += (s, args) => { if (args.OriginalSource is ScrollViewer || args.OriginalSource is WrapPanel || args.OriginalSource == IconPanel) { ClearSelection(); _isContextMenuOpen = true; HeaderContextMenu.PlacementTarget = IconPanel; HeaderContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint; HeaderContextMenu.IsOpen = true; args.Handled = true; } };
 
             if (MenuRollUpFence is not null) MenuRollUpFence.IsCheckable = true;
 
-            HeaderContextMenu.Opened += (s, args) => { _isContextMenuOpen = true; if (MenuRollUpFence is not null) MenuRollUpFence.IsChecked = _isRolledUp; };
+            HeaderContextMenu.Opened += (s, args) =>
+            {
+                _isContextMenuOpen = true;
+                if (MenuRollUpFence is not null) MenuRollUpFence.IsChecked = _isRolledUp;
+                UpdateViewMenuCheckmarks();
+            };
             HeaderContextMenu.Closed += (s, args) => HandleMenuClosed();
             this.PreviewMouseRightButtonDown += (s, args) => _isContextMenuOpen = true;
             if (SearchBox is not null && MainGrid is not null) { SearchBox.KeyDown += SearchBox_KeyDown; }
@@ -2334,27 +2627,31 @@ namespace DesktopFences
             }
         }
 
-        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        private unsafe IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == NativeMethods.WM_WINDOWPOSCHANGING)
+            if (msg == NativeMethods.WM_WINDOWPOSCHANGING && lParam != IntPtr.Zero)
             {
-                NativeMethods.WINDOWPOS windowPos = Marshal.PtrToStructure<NativeMethods.WINDOWPOS>(lParam)!;
-                if ((windowPos.flags & NativeMethods.SWP_NOMOVE) == 0 && (windowPos.flags & NativeMethods.SWP_NOSIZE) != 0)
+                NativeMethods.WINDOWPOS* pPos = (NativeMethods.WINDOWPOS*)lParam;
+                if ((pPos->flags & NativeMethods.SWP_NOMOVE) == 0 && (pPos->flags & NativeMethods.SWP_NOSIZE) != 0)
                 {
                     int snapMargin = 20;
-                    foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+                    foreach (var workArea in GetCachedWorkingAreas())
                     {
-                        var workArea = screen.WorkingArea;
-                        if (Math.Abs(windowPos.x - workArea.Left) < snapMargin) windowPos.x = workArea.Left;
-                        else if (Math.Abs((windowPos.x + windowPos.cx) - workArea.Right) < snapMargin) windowPos.x = workArea.Right - windowPos.cx;
+                        if (Math.Abs(pPos->x - workArea.Left) < snapMargin) pPos->x = workArea.Left;
+                        else if (Math.Abs((pPos->x + pPos->cx) - workArea.Right) < snapMargin) pPos->x = workArea.Right - pPos->cx;
 
-                        if (Math.Abs(windowPos.y - workArea.Top) < snapMargin) windowPos.y = workArea.Top;
-                        else if (Math.Abs((windowPos.y + windowPos.cy) - workArea.Bottom) < snapMargin) windowPos.y = workArea.Bottom - windowPos.cy;
+                        if (Math.Abs(pPos->y - workArea.Top) < snapMargin) pPos->y = workArea.Top;
+                        else if (Math.Abs((pPos->y + pPos->cy) - workArea.Bottom) < snapMargin) pPos->y = workArea.Bottom - pPos->cy;
                     }
                 }
-                Marshal.StructureToPtr(windowPos, lParam, true);
             }
-            if (msg == NativeMethods.WM_SETTINGCHANGE && wParam.ToInt32() == NativeMethods.SPI_SETDESKWALLPAPER) { if (_colorSource == FenceColorSource.AutoMatch) ResolveBodyColor(); }
+            if (msg == NativeMethods.WM_SETTINGCHANGE && (nint)wParam == NativeMethods.SPI_SETDESKWALLPAPER)
+            {
+                if (_colorSource == FenceColorSource.AutoMatch)
+                {
+                    _ = Dispatcher.InvokeAsync(() => ResolveBodyColor(), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            }
             return IntPtr.Zero;
         }
 
@@ -2364,17 +2661,50 @@ namespace DesktopFences
             if (HandleFenceShortcuts(e)) { e.Handled = true; return; }
 
             if (e.Key == Key.Delete && _selectedItems.Count > 0 && e.OriginalSource is not TextBox) { if (_isPortal) { if (MessageBox.Show("This is a Folder Portal.\n\nDeleting items here will send the actual files on your computer to the Recycle Bin. Are you sure you want to delete?", "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; } foreach (StackPanel selectedPanel in _selectedItems.ToList()) { if (selectedPanel.ToolTip is string path) RemoveFileFromVaultAndList(path); } ClearSelection(); ApplySorting(); SaveFenceState(); e.Handled = true; return; }
-            if (Keyboard.Modifiers == ModifierKeys.Control) { var helper = new WindowInteropHelper(this); var screen = System.Windows.Forms.Screen.FromHandle(helper.Handle); var workArea = screen.WorkingArea; PresentationSource? source = PresentationSource.FromVisual(this); double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0; double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0; double logicalLeft = workArea.Left / dpiX; double logicalTop = workArea.Top / dpiY; double logicalRight = workArea.Right / dpiX; double logicalBottom = workArea.Bottom / dpiY; bool wasHandled = false; this.BeginAnimation(Window.LeftProperty, null); this.BeginAnimation(Window.TopProperty, null); this.BeginAnimation(Window.WidthProperty, null); this.BeginAnimation(Window.HeightProperty, null); if (_isRolledUp) { _isRolledUp = false; _isTemporarilyRevealed = false; this.Width = _expandedWidth; this.Height = _expandedHeight; } if (e.Key == Key.Up) { this.Top = logicalTop; wasHandled = true; } else if (e.Key == Key.Down) { this.Top = logicalBottom - this.Height; wasHandled = true; } else if (e.Key == Key.Left) { this.Left = logicalLeft; wasHandled = true; } else if (e.Key == Key.Right) { this.Left = logicalRight - this.Width; wasHandled = true; } if (wasHandled) { e.Handled = true; DetermineDockState(); UpdateDockOrientation(); _expandedLeft = this.Left; _expandedTop = this.Top; _expandedWidth = this.Width; _expandedHeight = this.Height; SaveFenceState(); } }
+            if (Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                Rect workArea = GetCurrentScreenWorkingAreaLogical();
+                double logicalLeft = workArea.Left;
+                double logicalTop = workArea.Top;
+                double logicalRight = workArea.Right;
+                double logicalBottom = workArea.Bottom;
+                bool wasHandled = false;
+                this.BeginAnimation(Window.LeftProperty, null);
+                this.BeginAnimation(Window.TopProperty, null);
+                this.BeginAnimation(Window.WidthProperty, null);
+                this.BeginAnimation(Window.HeightProperty, null);
+                if (_isRolledUp)
+                {
+                    _isRolledUp = false;
+                    _isTemporarilyRevealed = false;
+                    this.Width = _expandedWidth;
+                    this.Height = _expandedHeight;
+                }
+                if (e.Key == Key.Up) { this.Top = logicalTop; wasHandled = true; }
+                else if (e.Key == Key.Down) { this.Top = logicalBottom - this.Height; wasHandled = true; }
+                else if (e.Key == Key.Left) { this.Left = logicalLeft; wasHandled = true; }
+                else if (e.Key == Key.Right) { this.Left = logicalRight - this.Width; wasHandled = true; }
+                if (wasHandled)
+                {
+                    e.Handled = true;
+                    DetermineDockState();
+                    UpdateDockOrientation();
+                    _expandedLeft = this.Left;
+                    _expandedTop = this.Top;
+                    _expandedWidth = this.Width;
+                    _expandedHeight = this.Height;
+                    SaveFenceState();
+                }
+            }
         }
 
         protected override void OnClosed(EventArgs e)
         {
-
-            if (_wndProcHook is not null &&
-                HwndSource.FromHwnd(new WindowInteropHelper(this).Handle) is HwndSource source)
+            if (_wndProcHook is not null && _hwndSource is not null)
             {
-                try { source.RemoveHook(_wndProcHook); } catch (Exception ex) { LogError("RemoveHook", ex); }
+                try { _hwndSource.RemoveHook(_wndProcHook); } catch (Exception ex) { LogError("RemoveHook", ex); }
                 _wndProcHook = null;
+                _hwndSource = null;
             }
 
             ReleaseOwnedResources();
@@ -2393,31 +2723,25 @@ namespace DesktopFences
             _saveTimer?.Stop();
         }
 
-        protected override async void OnClosing(System.ComponentModel.CancelEventArgs e)
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
-            if (_isClosing) { base.OnClosing(e); return; }
-
+            _isClosing = true;
             if (_isDeleted || _loadFailed)
             {
                 base.OnClosing(e);
                 return;
             }
 
-            e.Cancel = true;
-            _isClosing = true;
-
             try
             {
-                await PerformDiskWriteAsync();
+                PerformDiskWriteSynchronous();
             }
             catch (Exception ex)
             {
                 LogError("OnClosing", ex);
             }
-            finally
-            {
-                this.Close();
-            }
+
+            base.OnClosing(e);
         }
         private void ClearSelection() { foreach (var item in _selectedItems) item.Background = System.Windows.Media.Brushes.Transparent; _selectedItems.Clear(); }
         private void IconPanel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { this.Focus(); if (e.OriginalSource is ScrollViewer || e.OriginalSource is WrapPanel) { ClearSelection(); _selectionStartPoint = e.GetPosition(SelectionCanvas); _isDraggingSelectionBox = true; SelectionBox.Visibility = Visibility.Visible; SelectionBox.Width = 0; SelectionBox.Height = 0; Canvas.SetLeft(SelectionBox, _selectionStartPoint.X); Canvas.SetTop(SelectionBox, _selectionStartPoint.Y); IconPanel.CaptureMouse(); } }

@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "synth-matrix",
+  "name": "Synth Matrix",
+  "author": "DaveDebugs",
+  "category": "Terminal",
+  "baseTheme": "Dark",
+  "pattern": "MATRIX_SCANLINE",
+  "loopFile": "synth-matrix.mp4",
+  "colors": {
+    "primary": "#FF00FF66",
+    "primaryHover": "#FF19FF7F",
+    "primaryPressed": "#FF00E64D",
+    "secondary": "#FF00F0FF",
+    "accent": "#FF00F0FF",
+    "background": "#EB040D08",
+    "surface": "#2200FF66",
+    "surfaceSubtle": "#1100FF66",
+    "surfaceHover": "#4400FF66",
+    "surfaceSelected": "#6600FF66",
+    "header": "#F2000500",
+    "border": "#B300FF66",
+    "borderSubtle": "#4000FF66",
+    "focusRing": "#FF00FF66",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#040D08",
+    "glyph": "#FF00FF66",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF00F0FF",
+    "selectionFill": "#4000FF66",
+    "selectionStroke": "#FF00FF66",
+    "dropTarget": "#6600F0FF",
+    "scrollThumb": "#4000FF66",
+    "scrollThumbHover": "#7300FF66",
+    "scrollThumbActive": "#9900FF66"
+  },
+  "shape": {
+    "cornerRadius": 8,
+    "cornerRadiusSmall": 4,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

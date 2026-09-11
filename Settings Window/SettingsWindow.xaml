@@ -233,6 +233,63 @@
             <Setter Property="Margin" Value="{StaticResource RowGap}" />
         </Style>
 
+        <Style x:Key="ThemeTabPillButton" TargetType="Button">
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="PillBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PillBorder" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ThemeListBoxItemStyle" TargetType="ListBoxItem">
+            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Grid>
+                            <ContentPresenter />
+                            <Border x:Name="FocusRing"
+                                    Margin="-3"
+                                    CornerRadius="10"
+                                    BorderThickness="2"
+                                    BorderBrush="{DynamicResource CustomFocusRingBrush}"
+                                    Visibility="Collapsed"
+                                    SnapsToDevicePixels="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="ThemeSwatchTemplate">
             <Border Width="152" Height="98" Margin="0,0,10,10"
                     CornerRadius="8" BorderThickness="2" SnapsToDevicePixels="True"
@@ -766,52 +823,88 @@
                                 </StackPanel>
                             </Grid>
 
-                            <ListBox x:Name="ThemeGallery"
-                                     ItemTemplate="{StaticResource ThemeSwatchTemplate}"
-                                     Background="Transparent" BorderThickness="0"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     KeyboardNavigation.DirectionalNavigation="Contained"
-                                     PreviewKeyDown="ThemeGallery_KeyDown"
-                                     KeyDown="ThemeGallery_ContextMenuKey"
-                                     AutomationProperties.Name="Theme gallery">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal" />
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
+                            <Border Margin="0,0,0,16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    CornerRadius="8" Padding="3" HorizontalAlignment="Left"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="ThemeTabAll" Style="{StaticResource ThemeTabPillButton}"
+                                            Margin="0,0,4,0" Click="ThemeTabAll_Click" Content="All Themes" />
+                                    <Button x:Name="ThemeTabDark" Style="{StaticResource ThemeTabPillButton}"
+                                            Margin="0,0,4,0" Click="ThemeTabDark_Click" Content="Dark Themes" />
+                                    <Button x:Name="ThemeTabLight" Style="{StaticResource ThemeTabPillButton}"
+                                            Click="ThemeTabLight_Click" Content="Light Themes" />
+                                </StackPanel>
+                            </Border>
 
-                                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Margin" Value="0" />
-                                        <Setter Property="Background" Value="Transparent" />
-                                        <Setter Property="Focusable" Value="True" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Grid>
-                                                        <ContentPresenter />
+                            <StackPanel x:Name="DarkThemesSection">
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="WeatherMoon24" FontSize="16" Margin="0,0,8,0"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="Dark Themes" FontSize="15" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="DarkThemesCountText" Text=" (17)" FontSize="13"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <Separator Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                                               Opacity="0.3" Background="{DynamicResource CardStrokeColorDefaultBrush}" />
+                                </Grid>
 
-                                                        <Border x:Name="FocusRing"
-                                                                Margin="-3"
-                                                                CornerRadius="10"
-                                                                BorderThickness="2"
-                                                                BorderBrush="{DynamicResource CustomFocusRingBrush}"
-                                                                Visibility="Collapsed"
-                                                                SnapsToDevicePixels="True" />
-                                                    </Grid>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsKeyboardFocused" Value="True">
-                                                            <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                            </ListBox>
+                                <ListBox x:Name="DarkThemeGallery"
+                                         ItemTemplate="{StaticResource ThemeSwatchTemplate}"
+                                         ItemContainerStyle="{StaticResource ThemeListBoxItemStyle}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         KeyboardNavigation.DirectionalNavigation="Contained"
+                                         PreviewKeyDown="ThemeGallery_KeyDown"
+                                         KeyDown="ThemeGallery_ContextMenuKey"
+                                         AutomationProperties.Name="Dark theme gallery">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                </ListBox>
+                            </StackPanel>
+
+                            <StackPanel x:Name="LightThemesSection" Margin="0,16,0,0">
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="WeatherSunny24" FontSize="16" Margin="0,0,8,0"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="Light Themes" FontSize="15" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="LightThemesCountText" Text=" (13)" FontSize="13"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <Separator Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center"
+                                               Opacity="0.3" Background="{DynamicResource CardStrokeColorDefaultBrush}" />
+                                </Grid>
+
+                                <ListBox x:Name="LightThemeGallery"
+                                         ItemTemplate="{StaticResource ThemeSwatchTemplate}"
+                                         ItemContainerStyle="{StaticResource ThemeListBoxItemStyle}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         KeyboardNavigation.DirectionalNavigation="Contained"
+                                         PreviewKeyDown="ThemeGallery_KeyDown"
+                                         KeyDown="ThemeGallery_ContextMenuKey"
+                                         AutomationProperties.Name="Light theme gallery">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                </ListBox>
+                            </StackPanel>
 
                             <TextBlock Style="{StaticResource SectionHeader}" Text="Motion" />
                             <Border Style="{StaticResource CardPanel}" Margin="0,0,0,24">

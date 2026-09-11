@@ -240,12 +240,12 @@
                             <MenuItem.Icon>
                                 <ui:SymbolIcon Symbol="Eye24" />
                             </MenuItem.Icon>
-                            <MenuItem Header="Icon Size">
+                            <MenuItem x:Name="MenuIconSize" Header="Icon Size">
                                 <MenuItem Click="Menu_IconSize_Click" Header="Small" Tag="32" />
                                 <MenuItem Click="Menu_IconSize_Click" Header="Medium" Tag="48" />
                                 <MenuItem Click="Menu_IconSize_Click" Header="Large" Tag="64" />
                             </MenuItem>
-                            <MenuItem Header="Sort By">
+                            <MenuItem x:Name="MenuSortBy" Header="Sort By">
                                 <MenuItem Click="Menu_Sort_Click" Header="Name" Tag="Name" />
                                 <MenuItem Click="Menu_Sort_Click" Header="Size" Tag="Size" />
                                 <MenuItem Click="Menu_Sort_Click" Header="Item Type" Tag="Type" />

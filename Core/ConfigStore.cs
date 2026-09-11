@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 
 namespace DesktopFences
 {
-
     public static class ConfigStore
     {
         private static readonly SemaphoreSlim _gate = new(1, 1);
@@ -38,7 +37,7 @@ namespace DesktopFences
                 mutate(config);
                 WriteUnlocked(config);
             }
-            catch (Exception ex) { App.LogError("ConfigStore.Update", ex); }
+            catch (Exception ex) { App.LogError("ConfigStore.UpdateAsync", ex); }
             finally { _gate.Release(); }
         }
 
@@ -59,24 +58,46 @@ namespace DesktopFences
 
         private static GlobalConfig ReadUnlocked()
         {
+            if (!File.Exists(Path)) return new GlobalConfig();
+
             try
             {
-                if (!File.Exists(Path)) return new GlobalConfig();
-                return JsonSerializer.Deserialize<GlobalConfig>(File.ReadAllText(Path), ReadOptions)
-                       ?? new GlobalConfig();
+                using var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(fs);
+                string json = reader.ReadToEnd();
+                return JsonSerializer.Deserialize<GlobalConfig>(json, ReadOptions) ?? new GlobalConfig();
             }
             catch (Exception ex)
             {
-                App.LogError("ConfigStore.Read", ex);
+                App.LogError("ConfigStore.ReadUnlocked", ex);
+                try
+                {
+                    string backup = $"{Path}.corrupt_{DateTime.UtcNow:yyyyMMddHHmmss}.bak";
+                    File.Copy(Path, backup, overwrite: true);
+                }
+                catch { }
+
                 return new GlobalConfig();
             }
         }
 
         private static void WriteUnlocked(GlobalConfig config)
         {
-            string temp = Path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(config, WriteOptions));
-            File.Move(temp, Path, overwrite: true);
+            string dir = System.IO.Path.GetDirectoryName(Path)!;
+            Directory.CreateDirectory(dir);
+            string temp = System.IO.Path.Combine(dir, $"{System.IO.Path.GetFileName(Path)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                string json = JsonSerializer.Serialize(config, WriteOptions);
+                File.WriteAllText(temp, json);
+                File.Move(temp, Path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                throw;
+            }
         }
     }
 }

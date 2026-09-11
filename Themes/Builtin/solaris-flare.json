@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "solaris-flare",
+  "name": "Solaris Flare",
+  "author": "DaveDebugs",
+  "category": "Energy",
+  "baseTheme": "Dark",
+  "pattern": "THERMAL_MAGMA",
+  "loopFile": "solaris-flare.mp4",
+  "colors": {
+    "primary": "#FFFF8C00",
+    "primaryHover": "#FFFFA519",
+    "primaryPressed": "#FFE67300",
+    "secondary": "#FFFF3B30",
+    "accent": "#FFFF3B30",
+    "background": "#EB140A05",
+    "surface": "#22FF8C00",
+    "surfaceSubtle": "#11FF8C00",
+    "surfaceHover": "#44FF8C00",
+    "surfaceSelected": "#66FF8C00",
+    "header": "#F20C0200",
+    "border": "#B3FF8C00",
+    "borderSubtle": "#40FF8C00",
+    "focusRing": "#FFFF8C00",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#140A05",
+    "glyph": "#FFFF8C00",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFF3B30",
+    "selectionFill": "#40FF8C00",
+    "selectionStroke": "#FFFF8C00",
+    "dropTarget": "#66FF3B30",
+    "scrollThumb": "#40FF8C00",
+    "scrollThumbHover": "#73FF8C00",
+    "scrollThumbActive": "#99FF8C00"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

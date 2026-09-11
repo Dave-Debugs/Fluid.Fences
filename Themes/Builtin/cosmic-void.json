@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "cosmic-void",
+  "name": "Cosmic Void",
+  "author": "DaveDebugs",
+  "category": "Deep Space",
+  "baseTheme": "Dark",
+  "pattern": "STARDUST_BOKEH",
+  "loopFile": "cosmic-void.mp4",
+  "colors": {
+    "primary": "#FF818CF8",
+    "primaryHover": "#FF9AA5FF",
+    "primaryPressed": "#FF6873DF",
+    "secondary": "#FFC084FC",
+    "accent": "#FFC084FC",
+    "background": "#EB070714",
+    "surface": "#22818CF8",
+    "surfaceSubtle": "#11818CF8",
+    "surfaceHover": "#44818CF8",
+    "surfaceSelected": "#66818CF8",
+    "header": "#F200000C",
+    "border": "#B3818CF8",
+    "borderSubtle": "#40818CF8",
+    "focusRing": "#FF818CF8",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#070714",
+    "glyph": "#FF818CF8",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFC084FC",
+    "selectionFill": "#40818CF8",
+    "selectionStroke": "#FF818CF8",
+    "dropTarget": "#66C084FC",
+    "scrollThumb": "#40818CF8",
+    "scrollThumbHover": "#73818CF8",
+    "scrollThumbActive": "#99818CF8"
+  },
+  "shape": {
+    "cornerRadius": 16,
+    "cornerRadiusSmall": 8,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

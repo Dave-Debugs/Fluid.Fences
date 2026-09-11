@@ -7,14 +7,15 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 
 namespace DesktopFences
 {
-    public static class Updater
+    public static partial class Updater
     {
-
         public static string CurrentVersion { get; } = ResolveCurrentVersion();
 
         private static string ResolveCurrentVersion()
@@ -26,7 +27,25 @@ namespace DesktopFences
             }
             catch { return "0.0.0"; }
         }
+
         private const string GitHubApiUrl = "https://api.github.com/repos/DaveDebugs/Fluid.Fences/releases/latest";
+
+        [GeneratedRegex("^[A-Fa-f0-9]{64}$", RegexOptions.Compiled)]
+        private static partial Regex Sha256HexRegex();
+
+        private static readonly HttpClient _httpClient = CreateHttpClient();
+
+        private static HttpClient CreateHttpClient()
+        {
+            var handler = new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+                ConnectTimeout = TimeSpan.FromSeconds(15)
+            };
+            var client = new HttpClient(handler);
+            client.DefaultRequestHeaders.Add("User-Agent", "FluidFences-Updater");
+            return client;
+        }
 
         public class GitHubRelease
         {
@@ -44,10 +63,7 @@ namespace DesktopFences
         {
             try
             {
-                using HttpClient client = new();
-                client.DefaultRequestHeaders.Add("User-Agent", "FluidFences-Updater");
-
-                var release = await client.GetFromJsonAsync<GitHubRelease>(GitHubApiUrl);
+                var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(GitHubApiUrl);
                 if (release == null || string.IsNullOrEmpty(release.TagName)) return;
 
                 string latestTag = release.TagName.TrimStart('v', 'V');
@@ -56,7 +72,6 @@ namespace DesktopFences
                 {
                     if (latestVersion > currentVersion)
                     {
-
                         GitHubAsset? exeAsset =
                             release.Assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
                                                             && a.Name.Contains("setup", StringComparison.OrdinalIgnoreCase))
@@ -68,7 +83,7 @@ namespace DesktopFences
                         {
                             if (!silentCheck || MessageBox.Show($"A secure update to Fluid Fences (v{latestTag}) is available!\n\nWould you like to download and install it now?", "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                             {
-                                await ApplySecureUpdateAsync(exeAsset.DownloadUrl, checksumAsset.DownloadUrl);
+                                await ApplySecureUpdateAsync(exeAsset.DownloadUrl, checksumAsset.DownloadUrl, exeAsset.Name);
                             }
                         }
                         else if (!silentCheck)
@@ -88,51 +103,125 @@ namespace DesktopFences
             }
         }
 
-        private static async Task ApplySecureUpdateAsync(string installerUrl, string checksumUrl)
+        private static bool IsTrustedDownloadUri(string url)
         {
-            string installerPath = Path.Combine(
-                Path.GetTempPath(), $"FluidFences_Update_{Guid.NewGuid():N}.exe");
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return false;
+            if (uri.Scheme != Uri.UriSchemeHttps) return false;
+            return uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                   uri.Host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase) ||
+                   uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static async Task ApplySecureUpdateAsync(string installerUrl, string checksumUrl, string assetName)
+        {
+            if (!IsTrustedDownloadUri(installerUrl) || !IsTrustedDownloadUri(checksumUrl))
+            {
+                MessageBox.Show("Security Alert: Untrusted update URL detected. Aborting update.",
+                                "Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            string updateDir = Path.Combine(App.ConfigFolder, "Updates");
+            Directory.CreateDirectory(updateDir);
+            string installerPath = Path.Combine(updateDir, $"FluidFences_Update_{Guid.NewGuid():N}.exe");
 
             try
             {
-                using HttpClient client = new();
-                client.DefaultRequestHeaders.Add("User-Agent", "FluidFences-Updater");
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
-                string expectedHashRaw = await client.GetStringAsync(checksumUrl);
-                string expectedHash = expectedHashRaw.Trim().ToUpperInvariant().Split(' ', '\t')[0];
+                string checksumContent = await _httpClient.GetStringAsync(checksumUrl, cts.Token);
+                string expectedHash = "";
+                string targetFile = Path.GetFileName(assetName);
 
-                var response = await client.GetAsync(installerUrl);
-                response.EnsureSuccessStatusCode();
-                using (var fs = new FileStream(installerPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                foreach (var line in checksumContent.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
                 {
-                    await response.Content.CopyToAsync(fs);
+                    string trimmed = line.Trim();
+                    if (trimmed.StartsWith("SHA256", StringComparison.OrdinalIgnoreCase) && trimmed.Contains(targetFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int eqIdx = trimmed.LastIndexOf('=');
+                        if (eqIdx >= 0)
+                        {
+                            string candidate = trimmed.Substring(eqIdx + 1).Trim();
+                            if (Sha256HexRegex().IsMatch(candidate))
+                            {
+                                expectedHash = candidate.ToUpperInvariant();
+                                break;
+                            }
+                        }
+                    }
+
+                    var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length >= 2 && Sha256HexRegex().IsMatch(parts[0]))
+                    {
+                        string filePart = string.Join(" ", parts.Skip(1)).TrimStart('*', ' ');
+                        if (string.Equals(filePart, targetFile, StringComparison.OrdinalIgnoreCase) ||
+                            filePart.EndsWith(targetFile, StringComparison.OrdinalIgnoreCase))
+                        {
+                            expectedHash = parts[0].ToUpperInvariant();
+                            break;
+                        }
+                    }
+                    else if (parts.Length == 1 && Sha256HexRegex().IsMatch(parts[0]) && string.IsNullOrEmpty(expectedHash))
+                    {
+                        expectedHash = parts[0].ToUpperInvariant();
+                    }
                 }
 
-                string actualHash = CalculateSHA256(installerPath);
-                if (!expectedHash.Equals(actualHash, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(expectedHash))
                 {
-                    TryDelete(installerPath);
-                    MessageBox.Show(
-                        "Security Alert: the downloaded update was corrupted or tampered with. The update has been aborted.",
-                        "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show("Security Alert: The downloaded checksum format was invalid or did not contain a hash for this file. The update has been aborted.",
+                                    "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
+                }
+
+                using (var response = await _httpClient.GetAsync(installerUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token))
+                {
+                    response.EnsureSuccessStatusCode();
+
+                    await using (var netStream = await response.Content.ReadAsStreamAsync(cts.Token))
+                    await using (var fileStream = new FileStream(installerPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+                    using (var sha256 = SHA256.Create())
+                    {
+                        byte[] buffer = new byte[81920];
+                        int bytesRead;
+                        while ((bytesRead = await netStream.ReadAsync(buffer, cts.Token)) > 0)
+                        {
+                            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
+                            sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+                        }
+                        sha256.TransformFinalBlock([], 0, 0);
+
+                        string actualHash = Convert.ToHexString(sha256.Hash!).ToUpperInvariant();
+
+                        if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
+                        {
+                            fileStream.Close();
+                            TryDelete(installerPath);
+                            MessageBox.Show(
+                                "Security Alert: The downloaded update was corrupted or tampered with. The update has been aborted.",
+                                "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+                    }
                 }
 
                 ProcessStartInfo psi = new(installerPath)
                 {
                     Arguments = "/SILENT /NORESTART",
-                    UseShellExecute = true
+                    UseShellExecute = true,
+                    WorkingDirectory = updateDir
                 };
 
                 try
                 {
-                    Process.Start(psi);
-
-                    Application.Current.Shutdown();
+                    var proc = Process.Start(psi);
+                    if (proc != null)
+                    {
+                        Application.Current.Shutdown();
+                    }
                 }
                 catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
                 {
-
                     TryDelete(installerPath);
                     MessageBox.Show(
                         "The update was cancelled because Administrator permission was not granted.",
@@ -152,20 +241,16 @@ namespace DesktopFences
             try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
 
-        private static string CalculateSHA256(string filePath)
-        {
-            using var sha256 = SHA256.Create();
-            using var stream = File.OpenRead(filePath);
-            byte[] hash = sha256.ComputeHash(stream);
-            return Convert.ToHexString(hash);
-        }
-
         public static void CleanupOldUpdates()
         {
             try
             {
-                string? backupPath = Environment.ProcessPath + ".old";
-                if (backupPath is not null && File.Exists(backupPath)) File.Delete(backupPath);
+                string updateDir = Path.Combine(App.ConfigFolder, "Updates");
+                if (Directory.Exists(updateDir))
+                {
+                    foreach (string leftover in Directory.GetFiles(updateDir, "FluidFences_Update_*.exe"))
+                        TryDelete(leftover);
+                }
             }
             catch { }
 

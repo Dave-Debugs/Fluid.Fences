@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "peach-blossom",
+  "name": "Peach Blossom",
+  "author": "DaveDebugs",
+  "category": "Pastel",
+  "baseTheme": "Light",
+  "pattern": "KALEIDO_CRYSTAL",
+  "loopFile": "peach-blossom.mp4",
+  "colors": {
+    "primary": "#FFEA580C",
+    "primaryHover": "#FFFF7125",
+    "primaryPressed": "#FFD13F00",
+    "secondary": "#FFF43F5E",
+    "accent": "#FFF43F5E",
+    "background": "#EBFFF5F5",
+    "surface": "#1AEA580C",
+    "surfaceSubtle": "#0DEA580C",
+    "surfaceHover": "#2EEA580C",
+    "surfaceSelected": "#47EA580C",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33EA580C",
+    "focusRing": "#FFEA580C",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFEA580C",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFF43F5E",
+    "selectionFill": "#33EA580C",
+    "selectionStroke": "#FFEA580C",
+    "dropTarget": "#66F43F5E",
+    "scrollThumb": "#40EA580C",
+    "scrollThumbHover": "#73EA580C",
+    "scrollThumbActive": "#99EA580C"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

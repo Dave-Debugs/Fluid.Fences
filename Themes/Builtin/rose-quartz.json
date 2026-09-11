@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "rose-quartz",
+  "name": "Rose Quartz",
+  "author": "DaveDebugs",
+  "category": "Minimal",
+  "baseTheme": "Light",
+  "pattern": "KALEIDO_CRYSTAL",
+  "loopFile": "rose-quartz.mp4",
+  "colors": {
+    "primary": "#FFBE185D",
+    "primaryHover": "#FFD73176",
+    "primaryPressed": "#FFA50044",
+    "secondary": "#FF7C3AED",
+    "accent": "#FF7C3AED",
+    "background": "#EBFFF1F2",
+    "surface": "#1ABE185D",
+    "surfaceSubtle": "#0DBE185D",
+    "surfaceHover": "#2EBE185D",
+    "surfaceSelected": "#47BE185D",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33BE185D",
+    "focusRing": "#FFBE185D",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFBE185D",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF7C3AED",
+    "selectionFill": "#33BE185D",
+    "selectionStroke": "#FFBE185D",
+    "dropTarget": "#667C3AED",
+    "scrollThumb": "#40BE185D",
+    "scrollThumbHover": "#73BE185D",
+    "scrollThumbActive": "#99BE185D"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

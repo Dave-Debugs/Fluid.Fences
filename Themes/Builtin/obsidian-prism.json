@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "obsidian-prism",
+  "name": "Obsidian Prism",
+  "author": "DaveDebugs",
+  "category": "Cyber",
+  "baseTheme": "Dark",
+  "pattern": "AURORA_PLASMA",
+  "loopFile": "obsidian-prism.mp4",
+  "colors": {
+    "primary": "#FF00F0FF",
+    "primaryHover": "#FF19FFFF",
+    "primaryPressed": "#FF00D7E6",
+    "secondary": "#FFFF0055",
+    "accent": "#FFFF0055",
+    "background": "#EB08080C",
+    "surface": "#2200F0FF",
+    "surfaceSubtle": "#1100F0FF",
+    "surfaceHover": "#4400F0FF",
+    "surfaceSelected": "#6600F0FF",
+    "header": "#F2000004",
+    "border": "#B300F0FF",
+    "borderSubtle": "#4000F0FF",
+    "focusRing": "#FF00F0FF",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#08080C",
+    "glyph": "#FF00F0FF",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFF0055",
+    "selectionFill": "#4000F0FF",
+    "selectionStroke": "#FF00F0FF",
+    "dropTarget": "#66FF0055",
+    "scrollThumb": "#4000F0FF",
+    "scrollThumbHover": "#7300F0FF",
+    "scrollThumbActive": "#9900F0FF"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

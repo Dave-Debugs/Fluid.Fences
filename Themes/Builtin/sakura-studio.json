@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "sakura-studio",
+  "name": "Sakura Studio",
+  "author": "DaveDebugs",
+  "category": "Minimal",
+  "baseTheme": "Light",
+  "pattern": "AURORA_PLASMA",
+  "loopFile": "sakura-studio.mp4",
+  "colors": {
+    "primary": "#FFBE123C",
+    "primaryHover": "#FFD72B55",
+    "primaryPressed": "#FFA50023",
+    "secondary": "#FFDB2777",
+    "accent": "#FFDB2777",
+    "background": "#EBFFF1F2",
+    "surface": "#1ABE123C",
+    "surfaceSubtle": "#0DBE123C",
+    "surfaceHover": "#2EBE123C",
+    "surfaceSelected": "#47BE123C",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33BE123C",
+    "focusRing": "#FFBE123C",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFBE123C",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFDB2777",
+    "selectionFill": "#33BE123C",
+    "selectionStroke": "#FFBE123C",
+    "dropTarget": "#66DB2777",
+    "scrollThumb": "#40BE123C",
+    "scrollThumbHover": "#73BE123C",
+    "scrollThumbActive": "#99BE123C"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

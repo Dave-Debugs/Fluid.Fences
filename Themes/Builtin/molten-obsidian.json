@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "molten-obsidian",
+  "name": "Molten Obsidian",
+  "author": "DaveDebugs",
+  "category": "Energy",
+  "baseTheme": "Dark",
+  "pattern": "VORTEX_SWIRL",
+  "loopFile": "molten-obsidian.mp4",
+  "colors": {
+    "primary": "#FFF97316",
+    "primaryHover": "#FFFF8C2F",
+    "primaryPressed": "#FFE05A00",
+    "secondary": "#FFFBBF24",
+    "accent": "#FFFBBF24",
+    "background": "#EB120703",
+    "surface": "#22F97316",
+    "surfaceSubtle": "#11F97316",
+    "surfaceHover": "#44F97316",
+    "surfaceSelected": "#66F97316",
+    "header": "#F20A0000",
+    "border": "#B3F97316",
+    "borderSubtle": "#40F97316",
+    "focusRing": "#FFF97316",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#120703",
+    "glyph": "#FFF97316",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFBBF24",
+    "selectionFill": "#40F97316",
+    "selectionStroke": "#FFF97316",
+    "dropTarget": "#66FBBF24",
+    "scrollThumb": "#40F97316",
+    "scrollThumbHover": "#73F97316",
+    "scrollThumbActive": "#99F97316"
+  },
+  "shape": {
+    "cornerRadius": 10,
+    "cornerRadiusSmall": 5,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

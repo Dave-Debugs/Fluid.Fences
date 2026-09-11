@@ -5,6 +5,47 @@ All notable changes to Fluid Fences are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-09-11
+
+### Added
+- Complete catalog of 30 modern flagship themes categorized across Dark, Light, Warm, Pastel, and Vibrant palettes.
+- Categorized Themes dashboard featuring a dedicated Dark / Light mode selector bar and section header bars.
+- Dual-mode procedural motion engine delivering seamless 30fps H.264 video loops with watercolor alpha compositing on light canvases and additive glow on dark canvases.
+- Guaranteed 100% WCAG AAA multi-surface readability standards across light, gray, and dark desktop backdrops.
+- Persistent auto-sorting when files are dropped into a fence: dropping new files now preserves and applies the fence's active sort method (`Name`, `Date Modified`, `Size`, `Type`).
+- Active visual checkmarks (`✓`) on the selected sort mode under `View -> Sort By` and icon size under `View -> Icon Size` in fence context menus.
+- Graceful IPC application shutdown mechanism via named event `Local\FluidFences.Exit` and `--exit` command-line switch, coordinated with Inno Setup installer.
+- Security confirmation dialog before executing scripts or executables (.exe, .msi, .bat, .cmd, .ps1, etc.) from Folder Portals.
+- Architecture-specific 32-bit and 64-bit safe `SHFILEOPSTRUCT` Win32 definitions.
+- Automated backup creation (`.corrupt.bak`) upon encountering malformed or corrupted configuration files.
+- Media file extension whitelist (`.mp4`, `.webm`, `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`) for imported themes.
+- Direct donation link and verified high-error-correction QR code for Venmo (@Davedebugs).
+
+### Changed
+- Converted Per-Monitor DPI coordinate transforms using `PointFromScreen` in `ClampToScreen` and Ctrl+Arrow snapping, eliminating off-screen shifting on mixed-DPI secondary monitors.
+- Cached screen working areas in `WndProc` during `WM_WINDOWPOSCHANGING` to eliminate continuous `EnumDisplayMonitors` allocation storms during fence drags.
+- Added thread-safe 2.0-second cache for wallpaper dominant color sampling with explicit display settings invalidation.
+- Removed unbuffered `FirstChanceException` file logging on `debug_exceptions.log` that caused disk lock contention storms.
+- Replaced unmanaged heap memory allocation in window acrylic blur effects with stack-allocated structs, eliminating memory leak hazards.
+- Converted layout snapshots and disk persistence routines to use unique GUID temporary files, preventing write collisions.
+- Enhanced Updater checksum verification to support multi-asset GNU and BSD style manifests, with asynchronous download streaming.
+
+### Fixed
+- Fixed bloated translucent acrylic border/frame around fence context menus caused by unnecessary Win32 HWND blur hooks.
+- Fixed fence item rename failures and reverts caused by orphaned storage shortcut collisions and case-only rename conflicts.
+- Fixed item selection and focus loss when renaming fence items.
+- Fixed WIC native image loader errors in `error.log` by removing `.ico` from image extensions, letting shell extractors natively handle multi-frame icons.
+- Guarded against remote UNC SMB paths in `.url` shortcut `IconFile` extraction to prevent potential NTLM hash leaks.
+- Fixed directory rename bug where dots in directory names were stripped as file extensions.
+- Fixed Folder Portals to enumerate both files and subdirectories (`GetFileSystemEntries`).
+- Fixed `SetMergeHighlight` mouse position bounds test using native `this.IsMouseOver`.
+- Fixed a potential deadlock in `FileSystemWatcher.Error` by dispatching asynchronously to the UI thread.
+- Fixed an issue where `OnClosing` could abort Windows shutdown or restart sequences.
+- Fixed thumbnail generation failure caused by improper COM wrapper release on `.NET 8` source-generated interfaces.
+- Fixed cross-thread UI collection mutation in `ThemeCatalog.SaveAsync`.
+- Removed modification of undocumented system Explorer registry keys (`Explorer\Serialize`).
+- Hardened file renaming logic against path traversal attempts.
+
 ## [2.0.5] - 2026-08-12
 
 ### Added

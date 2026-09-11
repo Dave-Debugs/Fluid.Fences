@@ -6,30 +6,46 @@ namespace DesktopFences
 {
     internal static partial class NativeMethods
     {
-        [LibraryImport("user32.dll")]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
-        [LibraryImport("user32.dll")]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        [LibraryImport("user32.dll")]
+        [LibraryImport("user32.dll", SetLastError = true)]
         internal static partial IntPtr GetDC(IntPtr hwnd);
 
         [LibraryImport("user32.dll")]
         internal static partial int ReleaseDC(IntPtr hwnd, IntPtr hDC);
 
-        [LibraryImport("gdi32.dll")]
-        internal static partial uint GetPixel(IntPtr hDC, int x, int y);
-
-        internal enum AccentState { ACCENT_DISABLED = 0, ACCENT_ENABLE_GRADIENT = 1, ACCENT_ENABLE_TRANSPARENTGRADIENT = 2, ACCENT_ENABLE_BLURBEHIND = 3, ACCENT_ENABLE_ACRYLICBLURBEHIND = 4, ACCENT_INVALID_STATE = 5 }
+        internal enum AccentState
+        {
+            ACCENT_DISABLED = 0,
+            ACCENT_ENABLE_GRADIENT = 1,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+            ACCENT_ENABLE_BLURBEHIND = 3,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+            ACCENT_INVALID_STATE = 5
+        }
 
         [StructLayout(LayoutKind.Sequential)]
-        internal struct AccentPolicy { public AccentState AccentState; public uint AccentFlags; public uint GradientColor; public uint AnimationId; }
+        internal struct AccentPolicy
+        {
+            public AccentState AccentState;
+            public uint AccentFlags;
+            public uint GradientColor;
+            public uint AnimationId;
+        }
 
         [StructLayout(LayoutKind.Sequential)]
-        internal struct WindowCompositionAttributeData { public WindowCompositionAttribute Attribute; public IntPtr Data; public int SizeOfData; }
+        internal struct WindowCompositionAttributeData
+        {
+            public WindowCompositionAttribute Attribute;
+            public IntPtr Data;
+            public UIntPtr SizeOfData;
+        }
 
         internal enum WindowCompositionAttribute { WCA_ACCENT_POLICY = 19 }
         internal enum DWMWINDOWATTRIBUTE { DWMWA_WINDOW_CORNER_PREFERENCE = 33 }
@@ -46,40 +62,40 @@ namespace DesktopFences
         internal const int WM_SYSCOMMAND = 0x0112;
         internal const int SC_SIZE = 0xF000;
         internal const int HWND_BOTTOM = 1;
-        internal const uint SWP_NOMOVE = 0x0002;
         internal const uint SWP_NOSIZE = 0x0001;
+        internal const uint SWP_NOMOVE = 0x0002;
+        internal const uint SWP_NOZORDER = 0x0004;
         internal const uint SWP_NOACTIVATE = 0x0010;
+        internal const uint SWP_FRAMECHANGED = 0x0020;
         internal const int WM_WINDOWPOSCHANGING = 0x0046;
+        internal const int WM_SETTINGCHANGE = 0x001A;
+        internal const int SPI_SETDESKWALLPAPER = 0x0014;
 
         public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
         {
-            if (IntPtr.Size == 8)
-                return GetWindowLongPtr64(hWnd, nIndex);
-            else
-                return GetWindowLong32(hWnd, nIndex);
+            return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, nIndex) : GetWindowLong32(hWnd, nIndex);
         }
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
         private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
         private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 
         public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
         {
-            if (IntPtr.Size == 8)
-                return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
-            else
-                return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+            return IntPtr.Size == 8
+                ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong)
+                : new IntPtr(SetWindowLong32(hWnd, nIndex, unchecked((int)(nint)dwNewLong)));
         }
 
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
         private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
 
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
         private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
-        [LibraryImport("user32.dll")]
+        [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
@@ -91,7 +107,16 @@ namespace DesktopFences
         internal static partial bool ReleaseCapture();
 
         [StructLayout(LayoutKind.Sequential)]
-        public struct WINDOWPOS { public IntPtr hwnd; public IntPtr hwndInsertAfter; public int x; public int y; public int cx; public int cy; public uint flags; }
+        public struct WINDOWPOS
+        {
+            public IntPtr hwnd;
+            public IntPtr hwndInsertAfter;
+            public int x;
+            public int y;
+            public int cx;
+            public int cy;
+            public uint flags;
+        }
 
         [GeneratedComInterface, Guid("bcc18b79-ba16-442f-80c4-8a59c30d463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         internal partial interface IShellItemImageFactory { void GetImage(in NativeSize size, int flags, out IntPtr phbm); }
@@ -126,8 +151,8 @@ namespace DesktopFences
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool DestroyIcon(IntPtr hIcon);
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        internal struct SHFILEOPSTRUCT
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+        private struct SHFILEOPSTRUCT32
         {
             public IntPtr hwnd;
             public uint wFunc;
@@ -136,14 +161,30 @@ namespace DesktopFences
             public ushort fFlags;
             public int fAnyOperationsAborted;
             public IntPtr hNameMappings;
-            [MarshalAs(UnmanagedType.LPWStr)] public string lpszProgressTitle;
+            public IntPtr lpszProgressTitle;
         }
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        internal static extern int SHFileOperation(ref SHFILEOPSTRUCT FileOp);
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct SHFILEOPSTRUCT64
+        {
+            public IntPtr hwnd;
+            public uint wFunc;
+            public IntPtr pFrom;
+            public IntPtr pTo;
+            public ushort fFlags;
+            public int fAnyOperationsAborted;
+            public IntPtr hNameMappings;
+            public IntPtr lpszProgressTitle;
+        }
+
+        [DllImport("shell32.dll", EntryPoint = "SHFileOperationW", CharSet = CharSet.Unicode)]
+        private static extern int SHFileOperation32(ref SHFILEOPSTRUCT32 FileOp);
+
+        [DllImport("shell32.dll", EntryPoint = "SHFileOperationW", CharSet = CharSet.Unicode)]
+        private static extern int SHFileOperation64(ref SHFILEOPSTRUCT64 FileOp);
 
         private static string EnsureDoubleNullTerminated(string value) =>
-            value.EndsWith("\0\0", StringComparison.Ordinal) ? value : value + "\0\0";
+            value.EndsWith("\0\0", StringComparison.Ordinal) ? value : value.TrimEnd('\0') + "\0\0";
 
         internal static int PerformFileOperation(IntPtr hwnd, uint wFunc, string? pFrom, string? pTo, ushort fFlags)
         {
@@ -154,15 +195,30 @@ namespace DesktopFences
                 if (pFrom != null) pFromPtr = Marshal.StringToHGlobalUni(EnsureDoubleNullTerminated(pFrom));
                 if (pTo   != null) pToPtr   = Marshal.StringToHGlobalUni(EnsureDoubleNullTerminated(pTo));
 
-                SHFILEOPSTRUCT shf = new SHFILEOPSTRUCT
+                if (IntPtr.Size == 4)
                 {
-                    hwnd = hwnd,
-                    wFunc = wFunc,
-                    pFrom = pFromPtr,
-                    pTo = pToPtr,
-                    fFlags = fFlags
-                };
-                return SHFileOperation(ref shf);
+                    var shf = new SHFILEOPSTRUCT32
+                    {
+                        hwnd = hwnd,
+                        wFunc = wFunc,
+                        pFrom = pFromPtr,
+                        pTo = pToPtr,
+                        fFlags = fFlags
+                    };
+                    return SHFileOperation32(ref shf);
+                }
+                else
+                {
+                    var shf = new SHFILEOPSTRUCT64
+                    {
+                        hwnd = hwnd,
+                        wFunc = wFunc,
+                        pFrom = pFromPtr,
+                        pTo = pToPtr,
+                        fFlags = fFlags
+                    };
+                    return SHFileOperation64(ref shf);
+                }
             }
             finally
             {
@@ -170,13 +226,5 @@ namespace DesktopFences
                 if (pToPtr != IntPtr.Zero) Marshal.FreeHGlobal(pToPtr);
             }
         }
-
-        internal const int SPI_GETDESKWALLPAPER = 0x0073;
-        internal const int SPI_SETDESKWALLPAPER = 0x0014;
-        internal const int WM_SETTINGCHANGE = 0x001A;
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool SystemParametersInfo(int uiAction, int uiParam, System.Text.StringBuilder pvParam, int fWinIni);
     }
 }

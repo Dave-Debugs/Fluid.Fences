@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "hex-void",
+  "name": "Hex Void",
+  "author": "DaveDebugs",
+  "category": "Terminal",
+  "baseTheme": "Dark",
+  "pattern": "CYBER_HEXFLOW",
+  "loopFile": "hex-void.mp4",
+  "colors": {
+    "primary": "#FF8B5CF6",
+    "primaryHover": "#FFA475FF",
+    "primaryPressed": "#FF7243DD",
+    "secondary": "#FF84CC16",
+    "accent": "#FF84CC16",
+    "background": "#EB080612",
+    "surface": "#228B5CF6",
+    "surfaceSubtle": "#118B5CF6",
+    "surfaceHover": "#448B5CF6",
+    "surfaceSelected": "#668B5CF6",
+    "header": "#F200000A",
+    "border": "#B38B5CF6",
+    "borderSubtle": "#408B5CF6",
+    "focusRing": "#FF8B5CF6",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#080612",
+    "glyph": "#FF8B5CF6",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF84CC16",
+    "selectionFill": "#408B5CF6",
+    "selectionStroke": "#FF8B5CF6",
+    "dropTarget": "#6684CC16",
+    "scrollThumb": "#408B5CF6",
+    "scrollThumbHover": "#738B5CF6",
+    "scrollThumbActive": "#998B5CF6"
+  },
+  "shape": {
+    "cornerRadius": 8,
+    "cornerRadiusSmall": 4,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

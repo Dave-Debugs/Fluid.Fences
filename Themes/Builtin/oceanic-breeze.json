@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "oceanic-breeze",
+  "name": "Oceanic Breeze",
+  "author": "DaveDebugs",
+  "category": "Ocean",
+  "baseTheme": "Light",
+  "pattern": "VORTEX_SWIRL",
+  "loopFile": "oceanic-breeze.mp4",
+  "colors": {
+    "primary": "#FF0F766E",
+    "primaryHover": "#FF288F87",
+    "primaryPressed": "#FF005D55",
+    "secondary": "#FF06B6D4",
+    "accent": "#FF06B6D4",
+    "background": "#EBF0FDFA",
+    "surface": "#1A0F766E",
+    "surfaceSubtle": "#0D0F766E",
+    "surfaceHover": "#2E0F766E",
+    "surfaceSelected": "#470F766E",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#330F766E",
+    "focusRing": "#FF0F766E",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF0F766E",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF06B6D4",
+    "selectionFill": "#330F766E",
+    "selectionStroke": "#FF0F766E",
+    "dropTarget": "#6606B6D4",
+    "scrollThumb": "#400F766E",
+    "scrollThumbHover": "#730F766E",
+    "scrollThumbActive": "#990F766E"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

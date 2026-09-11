@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "paper-minimal",
+  "name": "Paper Minimal",
+  "author": "DaveDebugs",
+  "category": "Minimal",
+  "baseTheme": "Light",
+  "pattern": "FROST_CAUSTIC",
+  "loopFile": "paper-minimal.mp4",
+  "colors": {
+    "primary": "#FFDC2626",
+    "primaryHover": "#FFF53F3F",
+    "primaryPressed": "#FFC30D0D",
+    "secondary": "#FF4B5563",
+    "accent": "#FF4B5563",
+    "background": "#EBF7F5F0",
+    "surface": "#1ADC2626",
+    "surfaceSubtle": "#0DDC2626",
+    "surfaceHover": "#2EDC2626",
+    "surfaceSelected": "#47DC2626",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33DC2626",
+    "focusRing": "#FFDC2626",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFDC2626",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF4B5563",
+    "selectionFill": "#33DC2626",
+    "selectionStroke": "#FFDC2626",
+    "dropTarget": "#664B5563",
+    "scrollThumb": "#40DC2626",
+    "scrollThumbHover": "#73DC2626",
+    "scrollThumbActive": "#99DC2626"
+  },
+  "shape": {
+    "cornerRadius": 8,
+    "cornerRadiusSmall": 4,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

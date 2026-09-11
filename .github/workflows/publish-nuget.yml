@@ -23,7 +23,11 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build and Pack
-        run: dotnet build DesktopFences.csproj -c Release  -p:PackageVersion=${{ github.event.release.tag_name || '2.0.5' }}
+        shell: pwsh
+        run: |
+          $rawTag = "${{ github.event.release.tag_name }}"
+          $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.2.0' }
+          dotnet build DesktopFences.csproj -c Release -p:PackageVersion=$version
         
       - name: Publish to NuGet
-        run: Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object { dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} }
+        run: Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object { dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate }

@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "cyber-lotus",
+  "name": "Cyber Lotus",
+  "author": "DaveDebugs",
+  "category": "Cyber",
+  "baseTheme": "Dark",
+  "pattern": "KALEIDO_CRYSTAL",
+  "loopFile": "cyber-lotus.mp4",
+  "colors": {
+    "primary": "#FFF472B6",
+    "primaryHover": "#FFFF8BCF",
+    "primaryPressed": "#FFDB599D",
+    "secondary": "#FF2DD4BF",
+    "accent": "#FF2DD4BF",
+    "background": "#EB120614",
+    "surface": "#22F472B6",
+    "surfaceSubtle": "#11F472B6",
+    "surfaceHover": "#44F472B6",
+    "surfaceSelected": "#66F472B6",
+    "header": "#F20A000C",
+    "border": "#B3F472B6",
+    "borderSubtle": "#40F472B6",
+    "focusRing": "#FFF472B6",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#120614",
+    "glyph": "#FFF472B6",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF2DD4BF",
+    "selectionFill": "#40F472B6",
+    "selectionStroke": "#FFF472B6",
+    "dropTarget": "#662DD4BF",
+    "scrollThumb": "#40F472B6",
+    "scrollThumbHover": "#73F472B6",
+    "scrollThumbActive": "#99F472B6"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "desert-sandstone",
+  "name": "Desert Sandstone",
+  "author": "DaveDebugs",
+  "category": "Warm",
+  "baseTheme": "Light",
+  "pattern": "THERMAL_MAGMA",
+  "loopFile": "desert-sandstone.mp4",
+  "colors": {
+    "primary": "#FFB45309",
+    "primaryHover": "#FFCD6C22",
+    "primaryPressed": "#FF9B3A00",
+    "secondary": "#FFD97706",
+    "accent": "#FFD97706",
+    "background": "#EBFDF6EE",
+    "surface": "#1AB45309",
+    "surfaceSubtle": "#0DB45309",
+    "surfaceHover": "#2EB45309",
+    "surfaceSelected": "#47B45309",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#33B45309",
+    "focusRing": "#FFB45309",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FFB45309",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFD97706",
+    "selectionFill": "#33B45309",
+    "selectionStroke": "#FFB45309",
+    "dropTarget": "#66D97706",
+    "scrollThumb": "#40B45309",
+    "scrollThumbHover": "#73B45309",
+    "scrollThumbActive": "#99B45309"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

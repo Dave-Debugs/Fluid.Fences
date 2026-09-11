@@ -189,12 +189,27 @@ namespace DesktopFences.Core.Theming
         {
             var (copy, path, json) = PrepareForSave(theme, newName, overwriteId);
 
-            string temp = path + ".tmp";
+            string temp = $"{path}.{Guid.NewGuid():N}.tmp";
 
-            await File.WriteAllTextAsync(temp, json).ConfigureAwait(false);
-            File.Move(temp, path, overwrite: true);
+            try
+            {
+                await File.WriteAllTextAsync(temp, json).ConfigureAwait(false);
+                File.Move(temp, path, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            }
 
-            Reload();
+            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+            {
+                await dispatcher.InvokeAsync(Reload);
+            }
+            else
+            {
+                Reload();
+            }
+
             return Get(copy.Id);
         }
 
@@ -203,11 +218,26 @@ namespace DesktopFences.Core.Theming
         {
             var (copy, path, json) = PrepareForSave(theme, newName, overwriteId);
 
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, json);
-            File.Move(temp, path, overwrite: true);
+            string temp = $"{path}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                File.WriteAllText(temp, json);
+                File.Move(temp, path, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+            }
 
-            Reload();
+            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(Reload);
+            }
+            else
+            {
+                Reload();
+            }
+
             return Get(copy.Id);
         }
 
@@ -222,10 +252,15 @@ namespace DesktopFences.Core.Theming
 
             if (!string.IsNullOrWhiteSpace(overwriteId))
             {
-
-                copy.Id = overwriteId!;
+                string safeId = Slugify(overwriteId!);
+                copy.Id = safeId;
                 copy.IsBuiltIn = false;
                 string fixedPath = Path.Combine(UserThemeFolder, copy.Id + ".json");
+                string fullPath = Path.GetFullPath(fixedPath);
+                string userFolder = Path.GetFullPath(UserThemeFolder);
+                if (!fullPath.StartsWith(userFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Invalid theme ID path traversal detected.");
+
                 copy.SourcePath = fixedPath;
                 return (copy, fixedPath, JsonSerializer.Serialize(copy, WriteOptions));
             }
@@ -333,8 +368,14 @@ namespace DesktopFences.Core.Theming
                 {
                     string target = Path.Combine(UserThemeFolder, "media");
                     Directory.CreateDirectory(target);
+                    var allowedMedia = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"
+                    };
                     foreach (string file in Directory.GetFiles(mediaDir))
                     {
+                        string ext = Path.GetExtension(file);
+                        if (!allowedMedia.Contains(ext)) continue;
                         try { File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true); }
                         catch { }
                     }
@@ -353,7 +394,7 @@ namespace DesktopFences.Core.Theming
             catch (Exception ex)
             {
                 ThemeLog.Error("Import", ex);
-                LastImportProblem = null;
+                LastImportProblem = ex.Message;
                 return null;
             }
             finally

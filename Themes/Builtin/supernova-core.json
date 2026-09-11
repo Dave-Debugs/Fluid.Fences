@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "supernova-core",
+  "name": "Supernova Core",
+  "author": "DaveDebugs",
+  "category": "Deep Space",
+  "baseTheme": "Dark",
+  "pattern": "QUANTUM_NEBULA",
+  "loopFile": "supernova-core.mp4",
+  "colors": {
+    "primary": "#FFFFD166",
+    "primaryHover": "#FFFFEA7F",
+    "primaryPressed": "#FFE6B84D",
+    "secondary": "#FF7209B7",
+    "accent": "#FF7209B7",
+    "background": "#EB0F051D",
+    "surface": "#22FFD166",
+    "surfaceSubtle": "#11FFD166",
+    "surfaceHover": "#44FFD166",
+    "surfaceSelected": "#66FFD166",
+    "header": "#F2070015",
+    "border": "#B3FFD166",
+    "borderSubtle": "#40FFD166",
+    "focusRing": "#FFFFD166",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#0F051D",
+    "glyph": "#FFFFD166",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF7209B7",
+    "selectionFill": "#40FFD166",
+    "selectionStroke": "#FFFFD166",
+    "dropTarget": "#667209B7",
+    "scrollThumb": "#40FFD166",
+    "scrollThumbHover": "#73FFD166",
+    "scrollThumbActive": "#99FFD166"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

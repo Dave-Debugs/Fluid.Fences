@@ -18,7 +18,8 @@
 
 		<NoWarn>$(NoWarn);WFAC010</NoWarn>
 
-		<BaseOutputPath Condition="'$(GITHUB_ACTIONS)' != 'true'">P:\Programming Repositories\Compiled\Nuget</BaseOutputPath><BaseOutputPath Condition="'$(GITHUB_ACTIONS)' == 'true'">bin\</BaseOutputPath>
+		<BaseOutputPath Condition="'$(GITHUB_ACTIONS)' != 'true' and Exists('P:\Programming Repositories\Compiled\Nuget')">P:\Programming Repositories\Compiled\Nuget</BaseOutputPath>
+		<BaseOutputPath Condition="'$(GITHUB_ACTIONS)' == 'true' or !Exists('P:\Programming Repositories\Compiled\Nuget')">bin\</BaseOutputPath>
 		<Title>Fluid.Fences</Title>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
@@ -38,7 +39,7 @@
 		<PackageId>FluidFences</PackageId>
 		<Authors>DaveDebugs</Authors>
 		<Product>FluidFences</Product>
-		<Version>2.0.5</Version>
+		<Version>2.2.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -75,29 +76,16 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Resource Include="Assets\BuyMeACoffeeQR.png">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
-		<Resource Include="Assets\FF 256.ico">
-		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
+		<Resource Include="Assets\BuyMeACoffeeQR.png" />
+		<Resource Include="Assets\FF 256.ico" />
 		<Resource Include="Assets\FF 256.png">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 			<Pack>True</Pack>
 			<PackagePath>Assets\</PackagePath>
 		</Resource>
-		<Resource Include="Assets\FF 48.ico">
-		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
-		<Resource Include="Assets\FF32.ico">
-		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
-		<Resource Include="Settings Window\BuyMeACoffeeQR.png">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
-		<Resource Include="Settings Window\FluidFences16BitLogo.png">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Resource>
+		<Resource Include="Assets\FF 48.ico" />
+		<Resource Include="Assets\FF32.ico" />
+		<Resource Include="Settings Window\BuyMeACoffeeQR.png" />
+		<Resource Include="Settings Window\FluidFences16BitLogo.png" />
 	</ItemGroup>
 
 	<ItemGroup>

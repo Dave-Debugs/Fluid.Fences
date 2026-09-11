@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "earthy-terracotta",
+  "name": "Earthy Terracotta",
+  "author": "DaveDebugs",
+  "category": "Organic",
+  "baseTheme": "Light",
+  "pattern": "QUANTUM_NEBULA",
+  "loopFile": "earthy-terracotta.mp4",
+  "colors": {
+    "primary": "#FF9A3412",
+    "primaryHover": "#FFB34D2B",
+    "primaryPressed": "#FF811B00",
+    "secondary": "#FF65A30D",
+    "accent": "#FF65A30D",
+    "background": "#EBFBF5F0",
+    "surface": "#1A9A3412",
+    "surfaceSubtle": "#0D9A3412",
+    "surfaceHover": "#2E9A3412",
+    "surfaceSelected": "#479A3412",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#339A3412",
+    "focusRing": "#FF9A3412",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF9A3412",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FF65A30D",
+    "selectionFill": "#339A3412",
+    "selectionStroke": "#FF9A3412",
+    "dropTarget": "#6665A30D",
+    "scrollThumb": "#409A3412",
+    "scrollThumbHover": "#739A3412",
+    "scrollThumbActive": "#999A3412"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

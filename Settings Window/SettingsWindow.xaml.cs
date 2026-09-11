@@ -83,6 +83,8 @@ namespace DesktopFences
             };
         }
 
+        private string _themeCategoryMode = "All";
+
         private void LoadThemeCatalog(string? filter = null)
         {
             try
@@ -97,13 +99,36 @@ namespace DesktopFences
                     string f = filter.Trim();
                     items = items.Where(t =>
                         t.Name.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-                        t.Category.Contains(f, StringComparison.OrdinalIgnoreCase));
+                        t.Category.Contains(f, StringComparison.OrdinalIgnoreCase) ||
+                        t.BaseTheme.Contains(f, StringComparison.OrdinalIgnoreCase));
                 }
 
-                ThemeGallery.ItemsSource = items
+                var allList = items.ToList();
+
+                var darkList = allList
+                    .Where(t => !string.Equals(t.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase))
                     .OrderBy(t => t.Category, StringComparer.CurrentCultureIgnoreCase)
                     .ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
+
+                var lightList = allList
+                    .Where(t => string.Equals(t.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(t => t.Category, StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+
+                DarkThemeGallery.ItemsSource = darkList;
+                LightThemeGallery.ItemsSource = lightList;
+
+                DarkThemesCountText.Text = $" ({darkList.Count})";
+                LightThemesCountText.Text = $" ({lightList.Count})";
+
+                ThemeTabAll.Content = $"All Themes ({allList.Count})";
+                ThemeTabDark.Content = $"Dark Themes ({darkList.Count})";
+                ThemeTabLight.Content = $"Light Themes ({lightList.Count})";
+
+                UpdateThemeTabStyles();
+                ApplyThemeCategoryVisibility();
 
                 Dispatcher.BeginInvoke(new Action(HighlightActiveSwatch),
                     System.Windows.Threading.DispatcherPriority.Loaded);
@@ -112,28 +137,76 @@ namespace DesktopFences
             catch (Exception ex) { LogError("LoadThemeCatalog", ex); }
         }
 
+        private void SetThemeCategoryMode(string mode)
+        {
+            _themeCategoryMode = mode;
+            UpdateThemeTabStyles();
+            ApplyThemeCategoryVisibility();
+        }
+
+        private void UpdateThemeTabStyles()
+        {
+            SetPillStyle(ThemeTabAll, _themeCategoryMode == "All");
+            SetPillStyle(ThemeTabDark, _themeCategoryMode == "Dark");
+            SetPillStyle(ThemeTabLight, _themeCategoryMode == "Light");
+        }
+
+        private void SetPillStyle(Button btn, bool isActive)
+        {
+            if (btn is null) return;
+            if (isActive)
+            {
+                btn.Background = (Brush)TryFindResource("CustomAccentBrush");
+                btn.Foreground = (Brush)TryFindResource("CustomTextOnAccentBrush");
+            }
+            else
+            {
+                btn.Background = Brushes.Transparent;
+                btn.Foreground = (Brush)TryFindResource("TextFillColorSecondaryBrush");
+            }
+        }
+
+        private void ApplyThemeCategoryVisibility()
+        {
+            bool showDark = _themeCategoryMode == "All" || _themeCategoryMode == "Dark";
+            bool showLight = _themeCategoryMode == "All" || _themeCategoryMode == "Light";
+
+            DarkThemesSection.Visibility = showDark ? Visibility.Visible : Visibility.Collapsed;
+            LightThemesSection.Visibility = showLight ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ThemeTabAll_Click(object sender, RoutedEventArgs e) => SetThemeCategoryMode("All");
+        private void ThemeTabDark_Click(object sender, RoutedEventArgs e) => SetThemeCategoryMode("Dark");
+        private void ThemeTabLight_Click(object sender, RoutedEventArgs e) => SetThemeCategoryMode("Light");
+
         private void HighlightActiveSwatch()
         {
             try
             {
-                foreach (var item in ThemeGallery.Items)
-                {
-
-                    if (ThemeGallery.ItemContainerGenerator.ContainerFromItem(item) is not ListBoxItem container)
-                        continue;
-
-                    container.ApplyTemplate();
-                    if (FindDescendant<Border>(container, b => b.Tag is string) is not Border border) continue;
-
-                    bool active = item is Core.Theming.ThemeDefinition t &&
-                                  string.Equals(t.Id, App.ActiveThemeId, StringComparison.OrdinalIgnoreCase);
-
-                    border.BorderBrush = active
-                        ? (Brush)(TryFindResource("SystemAccentColorPrimaryBrush") ?? Brushes.DodgerBlue)
-                        : Brushes.Transparent;
-                }
+                HighlightGallery(DarkThemeGallery);
+                HighlightGallery(LightThemeGallery);
             }
             catch (Exception ex) { LogError("HighlightActiveSwatch", ex); }
+        }
+
+        private void HighlightGallery(ListBox gallery)
+        {
+            if (gallery is null) return;
+            foreach (var item in gallery.Items)
+            {
+                if (gallery.ItemContainerGenerator.ContainerFromItem(item) is not ListBoxItem container)
+                    continue;
+
+                container.ApplyTemplate();
+                if (FindDescendant<Border>(container, b => b.Tag is string) is not Border border) continue;
+
+                bool active = item is Core.Theming.ThemeDefinition t &&
+                              string.Equals(t.Id, App.ActiveThemeId, StringComparison.OrdinalIgnoreCase);
+
+                border.BorderBrush = active
+                    ? (Brush)(TryFindResource("SystemAccentColorPrimaryBrush") ?? Brushes.DodgerBlue)
+                    : Brushes.Transparent;
+            }
         }
 
         private static T? FindDescendant<T>(DependencyObject root, Func<T, bool>? match = null)
@@ -344,7 +417,7 @@ namespace DesktopFences
         private void ThemeGallery_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter && e.Key != Key.Space) return;
-            if (ThemeGallery.SelectedItem is not Core.Theming.ThemeDefinition theme) return;
+            if (sender is not ListBox gallery || gallery.SelectedItem is not Core.Theming.ThemeDefinition theme) return;
 
             ApplyThemeById(theme.Id);
             e.Handled = true;
@@ -355,16 +428,16 @@ namespace DesktopFences
             bool menuKey = e.Key == Key.Apps ||
                            (e.Key == Key.F10 && (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift);
             if (!menuKey) return;
-            if (ThemeGallery.SelectedItem is not Core.Theming.ThemeDefinition theme) return;
+            if (sender is not ListBox gallery || gallery.SelectedItem is not Core.Theming.ThemeDefinition theme) return;
 
-            ShowSwatchMenu(theme, ThemeGallery);
+            ShowSwatchMenu(theme, gallery);
             e.Handled = true;
         }
 
         private void ThemeFilter_TextChanged(object sender, TextChangedEventArgs e)
             => LoadThemeCatalog(ThemeFilter.Text);
 
-        private void UpdateContrastReadout()
+        private static void UpdateContrastReadout()
         {
             try
             {
@@ -571,18 +644,15 @@ namespace DesktopFences
             try
             {
                 using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                using RegistryKey? serializeKey = Registry.CurrentUser.CreateSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize");
 
                 if (StartupToggle.IsChecked == true)
                 {
                     string exePath = Environment.ProcessPath!;
                     key?.SetValue("FluidFences", $"\"{exePath}\"");
-                    serializeKey?.SetValue("StartupDelayInMS", 0, RegistryValueKind.DWord);
                 }
                 else
                 {
                     key?.DeleteValue("FluidFences", false);
-                    serializeKey?.DeleteValue("StartupDelayInMS", false);
                 }
             }
             catch (Exception ex)
@@ -593,16 +663,14 @@ namespace DesktopFences
 
         }
 
-        private void SaveLayout_Click(object sender, RoutedEventArgs e)
+        private async void SaveLayout_Click(object sender, RoutedEventArgs e)
         {
-            if (Application.Current is not App myApp) return;
-            myApp.SaveCurrentLayout();
+            await App.SaveCurrentLayoutAsync();
             ShowStatus("Layout snapshot saved.", StatusKind.Success);
         }
-        private void RestoreLayout_Click(object sender, RoutedEventArgs e)
+        private async void RestoreLayout_Click(object sender, RoutedEventArgs e)
         {
-            if (Application.Current is not App myApp) return;
-            myApp.RestoreLayoutSnapshot();
+            await App.RestoreLayoutSnapshotAsync();
             ShowStatus("Fences returned to the saved layout.", StatusKind.Success);
         }
 
@@ -821,7 +889,7 @@ namespace DesktopFences
         private void VenmoQr_Click(object sender, RoutedEventArgs e)
         {
             const string venmoUrl =
-                "https://www.paypal.com/qrcodes/venmocs/a0e66d13-f15f-4fbd-ba26-34008d486c61?created=1775532880";
+                "https://account.venmo.com/u/davedebugs";
             try
             {
                 Process.Start(new ProcessStartInfo(venmoUrl) { UseShellExecute = true });

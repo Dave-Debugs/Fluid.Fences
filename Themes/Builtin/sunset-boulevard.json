@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "sunset-boulevard",
+  "name": "Sunset Boulevard",
+  "author": "DaveDebugs",
+  "category": "Vibrant",
+  "baseTheme": "Dark",
+  "pattern": "RETRO_GRID",
+  "loopFile": "sunset-boulevard.mp4",
+  "colors": {
+    "primary": "#FFFF007F",
+    "primaryHover": "#FFFF1998",
+    "primaryPressed": "#FFE60066",
+    "secondary": "#FFFF7A00",
+    "accent": "#FFFF7A00",
+    "background": "#EB120516",
+    "surface": "#22FF007F",
+    "surfaceSubtle": "#11FF007F",
+    "surfaceHover": "#44FF007F",
+    "surfaceSelected": "#66FF007F",
+    "header": "#F20A000E",
+    "border": "#B3FF007F",
+    "borderSubtle": "#40FF007F",
+    "focusRing": "#FFFF007F",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#120516",
+    "glyph": "#FFFF007F",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFF7A00",
+    "selectionFill": "#40FF007F",
+    "selectionStroke": "#FFFF007F",
+    "dropTarget": "#66FF7A00",
+    "scrollThumb": "#40FF007F",
+    "scrollThumbHover": "#73FF007F",
+    "scrollThumbActive": "#99FF007F"
+  },
+  "shape": {
+    "cornerRadius": 10,
+    "cornerRadiusSmall": 5,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

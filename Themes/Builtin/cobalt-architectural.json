@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "cobalt-architectural",
+  "name": "Cobalt Architectural",
+  "author": "DaveDebugs",
+  "category": "Editorial",
+  "baseTheme": "Light",
+  "pattern": "RETRO_GRID",
+  "loopFile": "cobalt-architectural.mp4",
+  "colors": {
+    "primary": "#FF1D4ED8",
+    "primaryHover": "#FF3667F1",
+    "primaryPressed": "#FF0435BF",
+    "secondary": "#FFEA580C",
+    "accent": "#FFEA580C",
+    "background": "#EBEFF6FF",
+    "surface": "#1A1D4ED8",
+    "surfaceSubtle": "#0D1D4ED8",
+    "surfaceHover": "#2E1D4ED8",
+    "surfaceSelected": "#471D4ED8",
+    "header": "#F5FFFFFF",
+    "border": "#CC40444C",
+    "borderSubtle": "#331D4ED8",
+    "focusRing": "#FF1D4ED8",
+    "textPrimary": "#0A0A0C",
+    "textSecondary": "#2D3139",
+    "textDisabled": "#8086868B",
+    "textOnAccent": "#FFFFFF",
+    "glyph": "#FF1D4ED8",
+    "glyphHover": "#0A0A0C",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFEA580C",
+    "selectionFill": "#331D4ED8",
+    "selectionStroke": "#FF1D4ED8",
+    "dropTarget": "#66EA580C",
+    "scrollThumb": "#401D4ED8",
+    "scrollThumbHover": "#731D4ED8",
+    "scrollThumbActive": "#991D4ED8"
+  },
+  "shape": {
+    "cornerRadius": 8,
+    "cornerRadiusSmall": 4,
+    "borderThickness": 1,
+    "shadowOpacity": 0.2,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

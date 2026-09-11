@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "velvet-gold",
+  "name": "Velvet Gold",
+  "author": "DaveDebugs",
+  "category": "Luxury",
+  "baseTheme": "Dark",
+  "pattern": "THERMAL_MAGMA",
+  "loopFile": "velvet-gold.mp4",
+  "colors": {
+    "primary": "#FFF59E0B",
+    "primaryHover": "#FFFFB724",
+    "primaryPressed": "#FFDC8500",
+    "secondary": "#FFFCD34D",
+    "accent": "#FFFCD34D",
+    "background": "#EB120E06",
+    "surface": "#22F59E0B",
+    "surfaceSubtle": "#11F59E0B",
+    "surfaceHover": "#44F59E0B",
+    "surfaceSelected": "#66F59E0B",
+    "header": "#F20A0600",
+    "border": "#B3F59E0B",
+    "borderSubtle": "#40F59E0B",
+    "focusRing": "#FFF59E0B",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#120E06",
+    "glyph": "#FFF59E0B",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFCD34D",
+    "selectionFill": "#40F59E0B",
+    "selectionStroke": "#FFF59E0B",
+    "dropTarget": "#66FCD34D",
+    "scrollThumb": "#40F59E0B",
+    "scrollThumbHover": "#73F59E0B",
+    "scrollThumbActive": "#99F59E0B"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

@@ -64,6 +64,12 @@ namespace DesktopFences.Core.Theming
             ArgumentNullException.ThrowIfNull(theme);
             if (Application.Current is null) return;
 
+            if (!Application.Current.Dispatcher.CheckAccess())
+            {
+                Application.Current.Dispatcher.Invoke(() => Apply(theme, animate));
+                return;
+            }
+
             StopTransition();
 
             bool canAnimate = animate
@@ -85,6 +91,14 @@ namespace DesktopFences.Core.Theming
         public static void Preview(ThemeDefinition theme)
         {
             if (theme is null) return;
+            if (Application.Current is null) return;
+
+            if (!Application.Current.Dispatcher.CheckAccess())
+            {
+                Application.Current.Dispatcher.Invoke(() => Preview(theme));
+                return;
+            }
+
             _prePreviewTheme ??= Current;
             StopTransition();
             WriteTokens(theme);
@@ -93,6 +107,14 @@ namespace DesktopFences.Core.Theming
         public static void CancelPreview()
         {
             if (_prePreviewTheme is null) return;
+            if (Application.Current is null) return;
+
+            if (!Application.Current.Dispatcher.CheckAccess())
+            {
+                Application.Current.Dispatcher.Invoke(CancelPreview);
+                return;
+            }
+
             StopTransition();
             WriteTokens(_prePreviewTheme);
             Commit(_prePreviewTheme);

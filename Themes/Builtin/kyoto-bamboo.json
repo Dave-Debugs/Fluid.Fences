@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "kyoto-bamboo",
+  "name": "Kyoto Bamboo",
+  "author": "DaveDebugs",
+  "category": "Nature",
+  "baseTheme": "Dark",
+  "pattern": "AURORA_PLASMA",
+  "loopFile": "kyoto-bamboo.mp4",
+  "colors": {
+    "primary": "#FF22C55E",
+    "primaryHover": "#FF3BDE77",
+    "primaryPressed": "#FF09AC45",
+    "secondary": "#FFEAB308",
+    "accent": "#FFEAB308",
+    "background": "#EB061209",
+    "surface": "#2222C55E",
+    "surfaceSubtle": "#1122C55E",
+    "surfaceHover": "#4422C55E",
+    "surfaceSelected": "#6622C55E",
+    "header": "#F2000A01",
+    "border": "#B322C55E",
+    "borderSubtle": "#4022C55E",
+    "focusRing": "#FF22C55E",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#061209",
+    "glyph": "#FF22C55E",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFEAB308",
+    "selectionFill": "#4022C55E",
+    "selectionStroke": "#FF22C55E",
+    "dropTarget": "#66EAB308",
+    "scrollThumb": "#4022C55E",
+    "scrollThumbHover": "#7322C55E",
+    "scrollThumbActive": "#9922C55E"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

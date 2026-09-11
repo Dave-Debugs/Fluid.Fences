@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "prismatic-aurora",
+  "name": "Prismatic Aurora",
+  "author": "DaveDebugs",
+  "category": "Vibrant",
+  "baseTheme": "Dark",
+  "pattern": "VORTEX_SWIRL",
+  "loopFile": "prismatic-aurora.mp4",
+  "colors": {
+    "primary": "#FF10B981",
+    "primaryHover": "#FF29D29A",
+    "primaryPressed": "#FF00A068",
+    "secondary": "#FFF43F5E",
+    "accent": "#FFF43F5E",
+    "background": "#EB04140D",
+    "surface": "#2210B981",
+    "surfaceSubtle": "#1110B981",
+    "surfaceHover": "#4410B981",
+    "surfaceSelected": "#6610B981",
+    "header": "#F2000C05",
+    "border": "#B310B981",
+    "borderSubtle": "#4010B981",
+    "focusRing": "#FF10B981",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#04140D",
+    "glyph": "#FF10B981",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFF43F5E",
+    "selectionFill": "#4010B981",
+    "selectionStroke": "#FF10B981",
+    "dropTarget": "#66F43F5E",
+    "scrollThumb": "#4010B981",
+    "scrollThumbHover": "#7310B981",
+    "scrollThumbActive": "#9910B981"
+  },
+  "shape": {
+    "cornerRadius": 12,
+    "cornerRadiusSmall": 6,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}

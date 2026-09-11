@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "abyssal-trench",
+  "name": "Abyssal Trench",
+  "author": "DaveDebugs",
+  "category": "Cyber",
+  "baseTheme": "Dark",
+  "pattern": "VORTEX_SWIRL",
+  "loopFile": "abyssal-trench.mp4",
+  "colors": {
+    "primary": "#FF00F5D4",
+    "primaryHover": "#FF19FFED",
+    "primaryPressed": "#FF00DCBB",
+    "secondary": "#FFFF6B6B",
+    "accent": "#FFFF6B6B",
+    "background": "#EB050E14",
+    "surface": "#2200F5D4",
+    "surfaceSubtle": "#1100F5D4",
+    "surfaceHover": "#4400F5D4",
+    "surfaceSelected": "#6600F5D4",
+    "header": "#F200060C",
+    "border": "#B300F5D4",
+    "borderSubtle": "#4000F5D4",
+    "focusRing": "#FF00F5D4",
+    "textPrimary": "#FFFFFF",
+    "textSecondary": "#E2E8F0",
+    "textDisabled": "#8094A3B8",
+    "textOnAccent": "#050E14",
+    "glyph": "#FF00F5D4",
+    "glyphHover": "#FFFFFF",
+    "success": "#34C759",
+    "error": "#FF3B30",
+    "warning": "#FF9500",
+    "info": "#FFFF6B6B",
+    "selectionFill": "#4000F5D4",
+    "selectionStroke": "#FF00F5D4",
+    "dropTarget": "#66FF6B6B",
+    "scrollThumb": "#4000F5D4",
+    "scrollThumbHover": "#7300F5D4",
+    "scrollThumbActive": "#9900F5D4"
+  },
+  "shape": {
+    "cornerRadius": 14,
+    "cornerRadiusSmall": 7,
+    "borderThickness": 1,
+    "shadowOpacity": 0.35,
+    "shadowBlurRadius": 22,
+    "shadowDepth": 3
+  },
+  "typography": {
+    "fontFamily": "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+    "monospaceFontFamily": "Cascadia Mono, Consolas",
+    "scale": 1.0,
+    "titleWeight": "SemiBold"
+  },
+  "motion": {
+    "speedMultiplier": 1.0,
+    "rollUpStyle": "Smooth",
+    "themeTransitionMs": 180
+  }
+}
