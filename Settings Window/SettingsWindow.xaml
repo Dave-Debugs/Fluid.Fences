@@ -263,6 +263,7 @@
 
         <Style x:Key="ThemeListBoxItemStyle" TargetType="ListBoxItem">
             <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+            <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id}" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
             <Setter Property="Background" Value="Transparent" />
@@ -436,15 +437,21 @@
                                         <TextBlock Style="{StaticResource FieldLabel}" TextWrapping="Wrap"
                                                    Text="If it earned a place on your desktop, a coffee keeps it going." />
 
-                                        <ui:Button Margin="0,10,0,0" HorizontalAlignment="Left" Padding="16,8"
-                                                   Background="{DynamicResource CustomAccentBrush}"
-                                                   Foreground="{DynamicResource CustomTextOnAccentBrush}"
-                                                   BorderBrush="{DynamicResource CustomAccentBrush}"
-                                                   Content="Buy me a coffee"
-                                                   Icon="{ui:SymbolIcon Symbol=DrinkCoffee24}" Click="BuyMeACoffee_Click" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                            <ui:Button x:Name="BuyMeACoffeeButton" Margin="0,0,10,0" HorizontalAlignment="Left" Padding="16,8"
+                                                       Background="{DynamicResource CustomAccentBrush}"
+                                                       Foreground="{DynamicResource CustomTextOnAccentBrush}"
+                                                       BorderBrush="{DynamicResource CustomAccentBrush}"
+                                                       Content="Buy me a coffee"
+                                                       Icon="{ui:SymbolIcon Symbol=DrinkCoffee24}" Click="BuyMeACoffee_Click" />
+                                            <ui:Button x:Name="OpenGitHubButton" HorizontalAlignment="Left" Padding="16,8"
+                                                       Content="GitHub (Dave-Debugs)"
+                                                       ToolTip="https://github.com/Dave-Debugs"
+                                                       Icon="{ui:SymbolIcon Symbol=Code24}" Click="OpenGitHub_Click" />
+                                        </StackPanel>
                                     </StackPanel>
 
-                                    <Button Grid.Column="1" Click="VenmoQr_Click"
+                                    <Button x:Name="VenmoQrButton" Grid.Column="1" Click="VenmoQr_Click"
                                             Cursor="Hand"
                                             HorizontalAlignment="Right" VerticalAlignment="Center"
                                             MinWidth="96" MaxWidth="240"
@@ -512,13 +519,13 @@
                                                Text="Save where every fence sits so you can put them back after a display change. Useful when monitors come and go." />
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
 
-                                        <ui:Button Padding="16,8" Margin="0,0,10,0"
+                                        <ui:Button x:Name="SaveLayoutButton" Padding="16,8" Margin="0,0,10,0"
                                                    Background="{DynamicResource CustomAccentBrush}"
                                                    Foreground="{DynamicResource CustomTextOnAccentBrush}"
                                                    BorderBrush="{DynamicResource CustomAccentBrush}"
                                                    Content="Save current layout" Icon="{ui:SymbolIcon Symbol=Save24}"
                                                    Click="SaveLayout_Click" />
-                                        <ui:Button Padding="16,8" Content="Restore last layout"
+                                        <ui:Button x:Name="RestoreLayoutButton" Padding="16,8" Content="Restore last layout"
                                                    Icon="{ui:SymbolIcon Symbol=ArrowUndo24}" Click="RestoreLayout_Click" />
                                     </StackPanel>
                                 </StackPanel>
@@ -749,9 +756,9 @@
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
                                                     <ui:TextBox x:Name="MediaFilePathInput" AutomationProperties.Name="Background video file path" Grid.Column="0" IsReadOnly="True" />
-                                                    <ui:Button Grid.Column="1" Margin="8,0,0,0" Padding="14,6"
+                                                    <ui:Button x:Name="BrowseMediaButton" Grid.Column="1" Margin="8,0,0,0" Padding="14,6"
                                                                Content="Browse" Click="BrowseMedia_Click" />
-                                                    <ui:Button Grid.Column="2" Margin="8,0,0,0" Padding="14,6"
+                                                    <ui:Button x:Name="ClearMediaButton" Grid.Column="2" Margin="8,0,0,0" Padding="14,6"
                                                                Content="Clear" Click="ClearMedia_Click" />
                                                 </Grid>
                                                 <Grid>
@@ -814,10 +821,10 @@
                                                        Foreground="{DynamicResource CustomTextOnAccentBrush}" />
                                         </StackPanel>
                                     </Button>
-                                    <ui:Button Padding="14,6" Margin="0,0,8,0" Content="Import"
+                                    <ui:Button x:Name="ImportThemeButton" Padding="14,6" Margin="0,0,8,0" Content="Import"
                                                Icon="{ui:SymbolIcon Symbol=ArrowImport24}" Click="ImportTheme_Click"
                                                ToolTip="Import a .fftheme package or theme .json" />
-                                    <ui:Button Padding="14,6" Content="Export"
+                                    <ui:Button x:Name="ExportThemeButton" Padding="14,6" Content="Export"
                                                Icon="{ui:SymbolIcon Symbol=ArrowExport24}" Click="ExportTheme_Click"
                                                ToolTip="Share the current theme as a .fftheme package" />
                                 </StackPanel>
@@ -861,6 +868,7 @@
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          KeyboardNavigation.DirectionalNavigation="Contained"
                                          PreviewKeyDown="ThemeGallery_KeyDown"
+                                         PreviewMouseWheel="ThemeGallery_PreviewMouseWheel"
                                          KeyDown="ThemeGallery_ContextMenuKey"
                                          AutomationProperties.Name="Dark theme gallery">
                                     <ListBox.ItemsPanel>
@@ -896,6 +904,7 @@
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          KeyboardNavigation.DirectionalNavigation="Contained"
                                          PreviewKeyDown="ThemeGallery_KeyDown"
+                                         PreviewMouseWheel="ThemeGallery_PreviewMouseWheel"
                                          KeyDown="ThemeGallery_ContextMenuKey"
                                          AutomationProperties.Name="Light theme gallery">
                                     <ListBox.ItemsPanel>
@@ -951,7 +960,7 @@
                                     <TextBlock Text="Ask a question" FontWeight="SemiBold" />
                                     <TextBlock Style="{StaticResource FieldLabel}" Margin="0,4,0,10" TextWrapping="Wrap"
                                                Text="Something not behaving the way you expected?" />
-                                    <ui:Button HorizontalAlignment="Left" Padding="16,8" Content="Open a question"
+                                    <ui:Button x:Name="AskQuestionButton" HorizontalAlignment="Left" Padding="16,8" Content="Open a question"
                                                Icon="{ui:SymbolIcon Symbol=ChatHelp24}" Click="AskAQuestion_Click" />
                                 </StackPanel>
                             </Border>
@@ -960,7 +969,7 @@
                                     <TextBlock Text="Suggest an idea" FontWeight="SemiBold" />
                                     <TextBlock Style="{StaticResource FieldLabel}" Margin="0,4,0,10" TextWrapping="Wrap"
                                                Text="Missing something that would make this fit your desktop better?" />
-                                    <ui:Button HorizontalAlignment="Left" Padding="16,8" Content="Suggest a feature"
+                                    <ui:Button x:Name="SuggestIdeaButton" HorizontalAlignment="Left" Padding="16,8" Content="Suggest a feature"
                                                Icon="{ui:SymbolIcon Symbol=Lightbulb24}" Click="SuggestAnIdea_Click" />
                                 </StackPanel>
                             </Border>
@@ -990,7 +999,7 @@
                 <ui:Button x:Name="StatusUndo" Grid.Column="2" Content="Undo" Appearance="Secondary"
                            Margin="8,0,0,0" Padding="12,4" Visibility="Collapsed"
                            Click="StatusUndo_Click" />
-                <ui:Button Grid.Column="3" Margin="8,0,0,0" Padding="6,4" Appearance="Transparent"
+                <ui:Button x:Name="StatusDismissButton" AutomationProperties.Name="Dismiss notification" Grid.Column="3" Margin="8,0,0,0" Padding="6,4" Appearance="Transparent"
                            Icon="{ui:SymbolIcon Symbol=Dismiss24}" Click="StatusDismiss_Click"
                            ToolTip="Dismiss" />
             </Grid>

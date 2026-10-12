@@ -51,7 +51,7 @@ namespace DesktopFences
         {
             if (_closing) return;
             _closing = true;
-            try { _media.Stop(); } catch { }
+            try { _media.Stop(); _media.Close(); _media.Source = null; } catch { }
             try { Close(); } catch { }
         }
 

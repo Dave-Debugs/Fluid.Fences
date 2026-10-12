@@ -9,8 +9,6 @@
                 <ui:ThemesDictionary Theme="Dark" />
                 <ui:ControlsDictionary />
 
-                <ResourceDictionary Source="pack://application:,,,/FluidFences;component/Themes/CustomTheme.xaml" />
-
                 <ResourceDictionary Source="pack://application:,,,/FluidFences;component/Themes/Tokens.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

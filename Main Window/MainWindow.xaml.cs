@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -20,14 +20,16 @@ namespace DesktopFences
 {
     public partial class MainWindow : Window, IDisposable
     {
-        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
-
-        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string? windowTitle);
-
         private static readonly HashSet<string> _imageExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp" };
+
+        private static readonly HashSet<string> _dangerousExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".com", ".msi", ".msc", ".cpl", ".bat", ".cmd", ".ps1", ".psm1", ".psd1",
+            ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".ws", ".hta", ".scr", ".pif",
+            ".reg", ".jar", ".appx", ".msix", ".scf", ".lnk", ".url", ".appref-ms", ".diagcab",
+            ".search-ms", ".library-ms", ".settingcontent-ms", ".chm", ".inf", ".msp", ".py", ".pyw"
+        };
 
         private static System.Drawing.Rectangle[]? _cachedWorkingAreas;
         private static readonly object _workingAreaLock = new();
@@ -62,15 +64,28 @@ namespace DesktopFences
 
         private readonly DispatcherTimer _saveTimer = new();
         private readonly DispatcherTimer _portalDebounceTimer = new();
+        private readonly List<DispatcherTimer> _tabDragTimers = [];
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
         private readonly List<string> _currentFiles = [];
         private readonly List<StackPanel> _selectedItems = [];
 
+        private static readonly SolidColorBrush _fallbackHighlightBrush = CreateFrozenBrush(System.Windows.Media.Color.FromArgb(85, 0, 120, 215));
+        private static readonly SolidColorBrush _hitTestBackgroundBrush = CreateFrozenBrush(System.Windows.Media.Color.FromArgb(1, 0, 0, 0));
+
+        private static SolidColorBrush CreateFrozenBrush(System.Windows.Media.Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+
         private SolidColorBrush _highlightBrush =>
             TryFindResource("CustomSelectionFillBrush") as SolidColorBrush
-            ?? new SolidColorBrush(System.Windows.Media.Color.FromArgb(85, 0, 120, 215));
+            ?? _fallbackHighlightBrush;
 
-        private readonly System.Threading.SemaphoreSlim _iconSemaphore = new(4, 4);
+        private readonly SemaphoreSlim _iconSemaphore = new(4, 4);
+        private readonly SemaphoreSlim _saveGate = new(1, 1);
+        private CancellationTokenSource? _portalCts;
 
         public string FenceId { get; } = string.Empty;
         private readonly string _saveFilePath = string.Empty;
@@ -130,21 +145,28 @@ namespace DesktopFences
         private double _manualDragStartTop;
         private bool _wasRolledUpBeforeDrag;
 
-        [JsonIgnore] public string FenceTitle { get => TitleText.Text; set => TitleText.Text = value; }
-        [JsonIgnore] public string FenceSortMethod { get => _saveSortMethod; set => _saveSortMethod = value; }
-        [JsonIgnore] public string AutoSortExtensions { get; set; } = "";
-        [JsonIgnore] public bool ShowSearch { get; set; } = true;
-        [JsonIgnore] public Color FenceColor { get => _currentFenceColor; }
-        [JsonIgnore] public double FenceOpacity { get => _currentOpacity; }
-        [JsonIgnore] public bool AutoMatchColor { get => _autoMatchColor; set => _autoMatchColor = value; }
+        public string FenceTitle
+        {
+            get => TitleText.Text;
+            set
+            {
+                TitleText.Text = value;
+                System.Windows.Automation.AutomationProperties.SetName(this, value ?? string.Empty);
+            }
+        }
+        public string FenceSortMethod { get => _saveSortMethod; set => _saveSortMethod = value; }
+        public string AutoSortExtensions { get; set; } = "";
+        public bool ShowSearch { get; set; } = true;
+        public Color FenceColor { get => _currentFenceColor; }
+        public double FenceOpacity { get => _currentOpacity; }
+        public bool AutoMatchColor { get => _autoMatchColor; set => _autoMatchColor = value; }
 
-        [JsonIgnore]
         public string ColorSource
         {
             get => _colorSource;
             set { _colorSource = value; ResolveBodyColor(); SaveFenceState(); }
         }
-        [JsonIgnore] public int GhostModeOverride { get => _ghostModeOverride; set => _ghostModeOverride = value; }
+        public int GhostModeOverride { get => _ghostModeOverride; set => _ghostModeOverride = value; }
 
         public string GetFenceId() { return FenceId; }
         public bool GetIsRolledUp() { return _isRolledUp; }
@@ -303,22 +325,15 @@ namespace DesktopFences
             if (_isPortal) return;
             try
             {
-                string globalConfigPath = Path.Combine(App.ConfigFolder, "global_config.json");
                 bool restoreFiles = true;
 
-                if (File.Exists(globalConfigPath))
+                try
                 {
-                    try
-                    {
-                        string json = File.ReadAllText(globalConfigPath);
-                        if (JsonSerializer.Deserialize<GlobalConfig>(json) is GlobalConfig config)
-                        {
-                            restoreFiles = config.RestoreFilesOnDelete;
-                            App.PauseMediaOnRollup = config.PauseMediaOnRollup;
-                        }
-                    }
-                    catch (Exception ex) { App.LogError("StartupLoadConfig", ex); }
+                    GlobalConfig config = Task.Run(() => ConfigStore.ReadAsync()).GetAwaiter().GetResult();
+                    restoreFiles = config.RestoreFilesOnDelete;
+                    App.PauseMediaOnRollup = config.PauseMediaOnRollup;
                 }
+                catch (Exception ex) { App.LogError("StartupLoadConfig", ex); }
 
                 string storageDir = Path.Combine(App.ConfigFolder, "Storage", FenceId);
 
@@ -385,33 +400,43 @@ namespace DesktopFences
             catch (Exception ex) { LogError("ProcessVaultOnDeletion", ex); }
         }
 
+        private static string SanitizeFenceId(string? id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return Guid.NewGuid().ToString();
+            var invalidChars = Path.GetInvalidFileNameChars();
+            string cleaned = new string(id.Trim().Where(c => Array.IndexOf(invalidChars, c) < 0 && c != '/' && c != '\\').ToArray());
+            if (string.IsNullOrWhiteSpace(cleaned) || cleaned is "." or "..")
+            {
+                return Guid.NewGuid().ToString();
+            }
+            return cleaned;
+        }
+
         public MainWindow()
         {
             InitializeComponent();
             FenceId = "DESIGNER";
             _saveFilePath = Path.Combine(App.ConfigFolder, "Fences", "designer.json");
+            System.Windows.Automation.AutomationProperties.SetAutomationId(this, $"FenceWindow_{FenceId}");
+            System.Windows.Automation.AutomationProperties.SetName(this, FenceTitle ?? "Fluid Fence");
 
             _saveTimer.Interval = TimeSpan.FromSeconds(1.5);
             _saveTimer.Tick += async (s, e) => { _saveTimer.Stop(); await PerformDiskWriteAsync(); };
 
             _portalDebounceTimer.Interval = TimeSpan.FromMilliseconds(200);
-            _portalDebounceTimer.Tick += (s, e) => { _portalDebounceTimer.Stop(); RefreshPortalUI(); };
+            _portalDebounceTimer.Tick += (s, e) => { _portalDebounceTimer.Stop(); _ = RefreshPortalUIAsync(); };
         }
 
         public MainWindow(string fenceId) : this()
         {
-            FenceId = fenceId;
+            FenceId = SanitizeFenceId(fenceId);
             _saveFilePath = Path.Combine(App.ConfigFolder, "Fences", $"{FenceId}.json");
+            System.Windows.Automation.AutomationProperties.SetAutomationId(this, $"FenceWindow_{FenceId}");
         }
 
         private static void LogError(string context, Exception ex)
         {
-            try
-            {
-                string logPath = Path.Combine(App.ConfigFolder, "error.log");
-                File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {context}: {ex.Message}\n");
-            }
-            catch { }
+            App.LogError($"Fence_{context}", ex);
         }
 
         private void Window_Deactivated(object sender, EventArgs e)
@@ -514,7 +539,7 @@ namespace DesktopFences
             if (windowHelper.Handle == IntPtr.Zero) return;
             ApplyAcrylicToHwnd(windowHelper.Handle, color, opacity * GlassOpacity);
 
-            MainBorder.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+            MainBorder.Background = _hitTestBackgroundBrush;
         }
 
 
@@ -542,26 +567,39 @@ namespace DesktopFences
                     string json = await File.ReadAllTextAsync(_saveFilePath);
                     if (JsonSerializer.Deserialize<FenceData>(json) is FenceData data)
                     {
+                        bool wasHorizontallyRolledUp = data.IsRolledUp && double.IsFinite(data.Width) && data.Width > 0 && data.Width <= 40;
+                        data.Left = double.IsFinite(data.Left) ? data.Left : 100;
+                        data.Top = double.IsFinite(data.Top) ? data.Top : 100;
+                        data.Width = double.IsFinite(data.Width) && data.Width >= 100 ? data.Width : (wasHorizontallyRolledUp ? HEADER_SIZE : 250);
+                        data.Height = double.IsFinite(data.Height) && data.Height >= HEADER_SIZE ? data.Height : 300;
+                        data.ExpandedWidth = double.IsFinite(data.ExpandedWidth) && data.ExpandedWidth >= 100 ? data.ExpandedWidth : (data.Width >= 100 ? data.Width : 250);
+                        data.ExpandedHeight = double.IsFinite(data.ExpandedHeight) && data.ExpandedHeight >= HEADER_SIZE ? data.ExpandedHeight : Math.Max(data.Height, 300);
+                        data.ExpandedLeft = double.IsFinite(data.ExpandedLeft) ? data.ExpandedLeft : data.Left;
+                        data.ExpandedTop = double.IsFinite(data.ExpandedTop) ? data.ExpandedTop : data.Top;
+                        data.Opacity = Math.Clamp(double.IsFinite(data.Opacity) ? data.Opacity : 0.7, 0.05, 1.0);
+                        data.IconSize = Math.Clamp(double.IsFinite(data.IconSize) ? data.IconSize : 48, 16, 256);
+
                         this.Left = data.Left; this.Top = data.Top;
                         Rect virtualScreen = new(
                             SystemParameters.VirtualScreenLeft,
                             SystemParameters.VirtualScreenTop,
                             SystemParameters.VirtualScreenWidth,
                             SystemParameters.VirtualScreenHeight);
-                        Rect fenceBounds = new(data.Left, data.Top, data.Width > 0 ? data.Width : 250, data.Height > 0 ? data.Height : 300);
+                        Rect fenceBounds = new(data.Left, data.Top, data.Width, data.Height);
                         bool isOnScreen = virtualScreen.IntersectsWith(fenceBounds);
                         if (!isOnScreen) { this.Left = 100; this.Top = 100; }
 
                         _isRolledUp = data.IsRolledUp;
-                        _expandedHeight = data.ExpandedHeight; _expandedWidth = data.ExpandedWidth > 0 ? data.ExpandedWidth : 250;
-                        _expandedLeft = data.ExpandedWidth > 0 ? data.ExpandedLeft : data.Left; _expandedTop = data.ExpandedWidth > 0 ? data.ExpandedTop : data.Top;
+                        _expandedHeight = data.ExpandedHeight; _expandedWidth = data.ExpandedWidth;
+                        _expandedLeft = data.ExpandedLeft; _expandedTop = data.ExpandedTop;
                         if (!isOnScreen) { _expandedLeft = 100; _expandedTop = 100; }
                         TitleText.Text = data.Title;
+                        System.Windows.Automation.AutomationProperties.SetName(this, TitleText.Text ?? string.Empty);
 
                         if (SearchIcon is not null) SearchIcon.Visibility = data.ShowSearch ? Visibility.Visible : Visibility.Collapsed;
                         if (SearchBox is not null) SearchBox.Visibility = Visibility.Collapsed;
 
-                        CurrentIconSize = data.IconSize > 0 ? data.IconSize : 48;
+                        CurrentIconSize = data.IconSize;
                         _autoMatchColor = data.AutoMatchColor; _ghostModeOverride = data.GhostModeOverride;
 
                         try { _currentFenceColor = (Color)ColorConverter.ConvertFromString(data.HexColor); } catch { }
@@ -571,7 +609,7 @@ namespace DesktopFences
                             ? FenceColorSource.AutoMatch
                             : FenceColorSource.Theme);
 
-                        if (_isRolledUp) { if (data.Width <= 40) { this.Width = HEADER_SIZE; this.Height = data.Height; } else { this.Height = HEADER_SIZE; this.Width = data.Width; } }
+                        if (_isRolledUp) { if (wasHorizontallyRolledUp) { this.Width = HEADER_SIZE; this.Height = data.Height; } else { this.Height = HEADER_SIZE; this.Width = data.Width; } }
                         else { this.Height = data.Height; this.Width = data.Width; }
 
                         _tabs = data.Tabs;
@@ -617,8 +655,10 @@ namespace DesktopFences
         private void PerformDiskWriteSynchronous()
         {
             if (_isDeleted || _loadFailed || TitleText is null) return;
+            _saveGate.Wait();
             try
             {
+                if (_isDeleted || _loadFailed || TitleText is null) return;
                 SaveCurrentTabState();
                 FenceData data = new()
                 {
@@ -654,13 +694,19 @@ namespace DesktopFences
             {
                 LogError("PerformDiskWriteSynchronous", ex);
             }
+            finally
+            {
+                _saveGate.Release();
+            }
         }
 
         private async Task PerformDiskWriteAsync()
         {
             if (_isDeleted || _loadFailed || TitleText is null) return;
+            await _saveGate.WaitAsync();
             try
             {
+                if (_isDeleted || _loadFailed || TitleText is null) return;
                 SaveCurrentTabState();
                 FenceData data = new()
                 {
@@ -695,6 +741,10 @@ namespace DesktopFences
             catch (Exception ex)
             {
                 LogError("PerformDiskWriteAsync", ex);
+            }
+            finally
+            {
+                _saveGate.Release();
             }
         }
 
@@ -823,8 +873,6 @@ namespace DesktopFences
 
             try
             {
-                Core.ThemeManager.ApplyTheme(theme);
-
                 if (!string.IsNullOrWhiteSpace(theme.BackgroundMediaPath) && System.IO.File.Exists(theme.BackgroundMediaPath))
                 {
                     BackgroundMedia.Source = new Uri(theme.BackgroundMediaPath);
@@ -1061,6 +1109,8 @@ namespace DesktopFences
         {
             if (e.ClickCount == 2) return; e.Handled = true; TitleText.Visibility = Visibility.Collapsed;
             TextBox renameBox = new() { Text = TitleText.Text, Width = 140, Height = 22, BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Left, FontFamily = TitleText.FontFamily, FontWeight = FontWeights.SemiBold, Padding = new Thickness(4, 0, 0, 0) };
+            System.Windows.Automation.AutomationProperties.SetAutomationId(renameBox, "TitleRenameTextBox");
+            System.Windows.Automation.AutomationProperties.SetName(renameBox, "Rename Fence Title");
             ApplyInlineEditorTheme(renameBox);
             TitleStack.Children.Add(renameBox);
             Dispatcher.BeginInvoke(new Action(() => { renameBox.Focus(); Keyboard.Focus(renameBox); renameBox.SelectAll(); }), DispatcherPriority.Input);
@@ -1070,6 +1120,7 @@ namespace DesktopFences
                 if (TitleStack.Children.Contains(renameBox))
                 {
                     TitleText.Text = renameBox.Text;
+                    System.Windows.Automation.AutomationProperties.SetName(this, TitleText.Text ?? string.Empty);
                     if (_tabs.Count == 1) _tabs[0].Title = renameBox.Text;
                     TitleStack.Children.Remove(renameBox);
                     TitleText.Visibility = Visibility.Visible;
@@ -1081,6 +1132,23 @@ namespace DesktopFences
             renameBox.LostFocus += (s2, e2) => { CommitTitle(); };
         }
 
+        private static readonly System.Windows.Media.Effects.DropShadowEffect _darkHalo = CreateFrozenHalo(Colors.Black);
+        private static readonly System.Windows.Media.Effects.DropShadowEffect _lightHalo = CreateFrozenHalo(Colors.White);
+
+        private static System.Windows.Media.Effects.DropShadowEffect CreateFrozenHalo(Color color)
+        {
+            var effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = color,
+                BlurRadius = 2,
+                ShadowDepth = 0,
+                Opacity = 1.0,
+                RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
+            };
+            effect.Freeze();
+            return effect;
+        }
+
         private static System.Windows.Media.Effects.DropShadowEffect BuildLabelHalo()
         {
             System.Windows.Media.Color text = Colors.White;
@@ -1090,15 +1158,7 @@ namespace DesktopFences
             double luminance = (0.2126 * text.R + 0.7152 * text.G + 0.0722 * text.B) / 255.0;
             bool lightText = luminance > 0.5;
 
-            return new System.Windows.Media.Effects.DropShadowEffect
-            {
-                Color = lightText ? Colors.Black : Colors.White,
-
-                BlurRadius = 2,
-                ShadowDepth = 0,
-                Opacity = 1.0,
-                RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
-            };
+            return lightText ? _darkHalo : _lightHalo;
         }
 
         private void RefreshLabelHalos()
@@ -1193,15 +1253,18 @@ namespace DesktopFences
         }
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) { ApplySorting(); }
-        private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
+        private async void SearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            _ = System.Threading.Tasks.Task.Delay(150).ContinueWith(_ =>
+            await Task.Delay(50);
+            if (this.IsLoaded && !SearchBox.IsFocused && string.IsNullOrWhiteSpace(SearchBox.Text))
             {
-                Dispatcher.InvokeAsync(() =>
+                SearchBox.Visibility = Visibility.Collapsed;
+                if (!this.IsMouseOver && _isRolledUp && _isTemporarilyRevealed)
                 {
-                    if (this.IsLoaded && !SearchBox.IsFocused && string.IsNullOrWhiteSpace(SearchBox.Text)) { SearchBox.Visibility = Visibility.Collapsed; if (!this.IsMouseOver && _isRolledUp && _isTemporarilyRevealed) { AnimateRollUp(); _isTemporarilyRevealed = false; } }
-                });
-            });
+                    AnimateRollUp();
+                    _isTemporarilyRevealed = false;
+                }
+            }
         }
         private void SearchBox_KeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Escape) { SearchBox.Text = ""; SearchBox.Visibility = Visibility.Collapsed; e.Handled = true; MainGrid.Focus(); } }
 
@@ -1215,21 +1278,330 @@ namespace DesktopFences
 
         private void MenuIcon_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { e.Handled = true; OpenFenceMenu(sender as UIElement); }
 
+        private static readonly (string Title, string DefaultExtensions, HashSet<string> Extensions)[] _fileTypeCategories =
+        [
+            ("Shortcuts & Apps", ".lnk, .url, .appref-ms, .exe, .msi", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".lnk", ".url", ".appref-ms", ".exe", ".msi" }),
+            ("Documents", ".pdf, .doc, .docx, .xls, .xlsx, .ppt, .pptx, .txt, .rtf, .csv, .md, .odt, .ods, .odp, .epub", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv", ".md", ".odt", ".ods", ".odp", ".epub" }),
+            ("Images", ".jpg, .jpeg, .png, .gif, .bmp, .webp, .svg, .ico, .tiff, .tif, .heic, .psd, .ai, .raw", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif", ".heic", ".psd", ".ai", ".raw" }),
+            ("Media", ".mp4, .mkv, .avi, .mov, .wmv, .webm, .flv, .m4v, .mp3, .wav, .flac, .ogg, .m4a, .aac, .wma", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".flv", ".m4v", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".wma" }),
+            ("Archives", ".zip, .rar, .7z, .tar, .gz, .bz2, .xz, .tgz, .iso, .cab", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz", ".iso", ".cab" }),
+            ("Code & Scripts", ".cs, .py, .js, .ts, .jsx, .tsx, .html, .htm, .css, .scss, .json, .xml, .yaml, .yml, .toml, .ini, .cfg, .sql, .ps1, .bat, .cmd, .sh, .cpp, .c, .h, .hpp, .java, .go, .rs, .php, .rb, .lua, .sln, .csproj", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".cs", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".htm", ".css", ".scss", ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".sql", ".ps1", ".bat", ".cmd", ".sh", ".cpp", ".c", ".h", ".hpp", ".java", ".go", ".rs", ".php", ".rb", ".lua", ".sln", ".csproj" })
+        ];
+
         private void Menu_AutoOrganize_Click(object sender, RoutedEventArgs e) { AutoOrganize(); }
 
         private void AutoOrganize()
         {
-            if (string.IsNullOrWhiteSpace(AutoSortExtensions)) { MessageBox.Show("Please set up Auto-Sort extensions in Settings first (e.g. .jpg, .png).", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+            AutoOrganizeDesktop(this);
+        }
+
+        public static void AutoOrganizeDesktop(MainWindow? initiator = null)
+        {
             try
             {
                 string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string[] files = Directory.GetFiles(desktopPath);
-                string[] extensions = AutoSortExtensions.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries);
-                bool moved = false;
-                foreach (string file in files) { string ext = Path.GetExtension(file); foreach (string target in extensions) { if (string.Equals(ext, target, StringComparison.OrdinalIgnoreCase) || string.Equals(ext, "." + target, StringComparison.OrdinalIgnoreCase)) { try { string vaultedPath = MoveToVault(file); if (!_currentFiles.Contains(vaultedPath)) { _currentFiles.Add(vaultedPath); moved = true; } } catch { } break; } } }
-                if (moved) { ApplySorting(); SaveFenceState(); MessageBox.Show("Desktop files organized successfully into vault!", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information); } else MessageBox.Show("No new files found on the desktop matching your extensions.", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (!Directory.Exists(desktopPath)) return;
+
+                List<string> desktopFiles = [];
+                foreach (string file in Directory.GetFiles(desktopPath))
+                {
+                    string fileName = Path.GetFileName(file);
+                    if (string.IsNullOrWhiteSpace(fileName)) continue;
+                    if (fileName.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Equals("thumbs.db", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Equals(".ds_store", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.StartsWith("~$", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        FileAttributes attrs = File.GetAttributes(file);
+                        if ((attrs & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
+                    }
+                    catch { continue; }
+
+                    desktopFiles.Add(file);
+                }
+
+                if (desktopFiles.Count == 0)
+                {
+                    MessageBox.Show("No organizable files were found on the desktop.", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                List<MainWindow> openFences = Application.Current.Windows
+                    .OfType<MainWindow>()
+                    .Where(w => !w._isDeleted && !w._isClosing && !w._isPortal)
+                    .ToList();
+
+                if (initiator is not null && openFences.Remove(initiator))
+                {
+                    openFences.Insert(0, initiator);
+                }
+
+                HashSet<MainWindow> modifiedExistingFences = [];
+                List<string> remainingFiles = [];
+                int totalMovedCount = 0;
+                HashSet<string> affectedCategoryNames = new(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string file in desktopFiles)
+                {
+                    string ext = Path.GetExtension(file);
+                    MainWindow? matchedCustomFence = null;
+
+                    foreach (MainWindow fence in openFences)
+                    {
+                        if (MatchesExtensionFilter(ext, fence.AutoSortExtensions))
+                        {
+                            matchedCustomFence = fence;
+                            break;
+                        }
+                    }
+
+                    if (matchedCustomFence is not null)
+                    {
+                        if (TryMoveFileIntoFence(matchedCustomFence, file))
+                        {
+                            modifiedExistingFences.Add(matchedCustomFence);
+                            affectedCategoryNames.Add(matchedCustomFence.FenceTitle);
+                            totalMovedCount++;
+                        }
+                    }
+                    else
+                    {
+                        remainingFiles.Add(file);
+                    }
+                }
+
+                Dictionary<string, (string DefaultExtensions, List<string> Files)> groupedByCategory = new(StringComparer.OrdinalIgnoreCase);
+                foreach (string file in remainingFiles)
+                {
+                    string ext = Path.GetExtension(file);
+                    (string categoryTitle, string defaultExts) = ResolveCategoryForExtension(ext);
+                    if (!groupedByCategory.TryGetValue(categoryTitle, out var entry))
+                    {
+                        entry = (defaultExts, []);
+                        groupedByCategory[categoryTitle] = entry;
+                    }
+                    entry.Files.Add(file);
+                }
+
+                bool canReuseInitiator = initiator is not null &&
+                    !initiator._isPortal &&
+                    !initiator._isDeleted &&
+                    !initiator._isClosing &&
+                    initiator._currentFiles.Count == 0 &&
+                    initiator._tabs.Count <= 1 &&
+                    string.IsNullOrWhiteSpace(initiator.AutoSortExtensions) &&
+                    IsDefaultFenceTitle(initiator.FenceTitle);
+
+                Rect workArea = initiator is not null
+                    ? initiator.GetCurrentScreenWorkingAreaLogical()
+                    : SystemParameters.WorkArea;
+
+                double fenceWidth = 280;
+                double fenceHeight = 320;
+                double margin = 24;
+                double startLeft = workArea.Left + 40;
+                double startTop = workArea.Top + 40;
+                int createdFenceCount = 0;
+
+                foreach (var kvp in groupedByCategory)
+                {
+                    string categoryTitle = kvp.Key;
+                    string defaultExtensions = kvp.Value.DefaultExtensions;
+                    List<string> categoryFiles = kvp.Value.Files;
+                    if (categoryFiles.Count == 0) continue;
+
+                    MainWindow? existingCategoryFence = openFences.FirstOrDefault(f =>
+                        string.Equals(f.FenceTitle, categoryTitle, StringComparison.OrdinalIgnoreCase) ||
+                        (f._activeTabIndex < f._tabs.Count && string.Equals(f._tabs[f._activeTabIndex].Title, categoryTitle, StringComparison.OrdinalIgnoreCase)));
+
+                    if (existingCategoryFence is null && canReuseInitiator && initiator is not null)
+                    {
+                        existingCategoryFence = initiator;
+                        canReuseInitiator = false;
+                        existingCategoryFence.FenceTitle = categoryTitle;
+                        existingCategoryFence.AutoSortExtensions = defaultExtensions;
+                        if (existingCategoryFence._activeTabIndex < existingCategoryFence._tabs.Count)
+                        {
+                            existingCategoryFence._tabs[existingCategoryFence._activeTabIndex].Title = categoryTitle;
+                            existingCategoryFence._tabs[existingCategoryFence._activeTabIndex].AutoSortExtensions = defaultExtensions;
+                        }
+                    }
+
+                    if (existingCategoryFence is not null)
+                    {
+                        if (string.IsNullOrWhiteSpace(existingCategoryFence.AutoSortExtensions) && !string.IsNullOrWhiteSpace(defaultExtensions))
+                        {
+                            existingCategoryFence.AutoSortExtensions = defaultExtensions;
+                            if (existingCategoryFence._activeTabIndex < existingCategoryFence._tabs.Count)
+                            {
+                                existingCategoryFence._tabs[existingCategoryFence._activeTabIndex].AutoSortExtensions = defaultExtensions;
+                            }
+                        }
+
+                        foreach (string file in categoryFiles)
+                        {
+                            if (TryMoveFileIntoFence(existingCategoryFence, file))
+                            {
+                                modifiedExistingFences.Add(existingCategoryFence);
+                                affectedCategoryNames.Add(existingCategoryFence.FenceTitle);
+                                totalMovedCount++;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        int col = createdFenceCount % 3;
+                        int row = createdFenceCount / 3;
+                        double nextLeft = startLeft + col * (fenceWidth + margin);
+                        double nextTop = startTop + row * (fenceHeight + margin);
+
+                        if (nextLeft + fenceWidth > workArea.Right)
+                        {
+                            nextLeft = Math.Max(workArea.Left + 20, workArea.Right - fenceWidth - 20);
+                        }
+                        if (nextTop + fenceHeight > workArea.Bottom)
+                        {
+                            nextTop = Math.Max(workArea.Top + 20, workArea.Bottom - fenceHeight - 20);
+                        }
+
+                        MainWindow newFence = new(Guid.NewGuid().ToString())
+                        {
+                            Left = nextLeft,
+                            Top = nextTop,
+                            Width = fenceWidth,
+                            Height = fenceHeight
+                        };
+                        newFence._expandedLeft = nextLeft;
+                        newFence._expandedTop = nextTop;
+                        newFence._expandedWidth = fenceWidth;
+                        newFence._expandedHeight = fenceHeight;
+
+                        List<string> movedCategoryFiles = [];
+                        foreach (string file in categoryFiles)
+                        {
+                            try
+                            {
+                                string vaultedPath = newFence.MoveToVault(file);
+                                if (!string.Equals(vaultedPath, file, StringComparison.OrdinalIgnoreCase) || !File.Exists(file))
+                                {
+                                    if (!movedCategoryFiles.Contains(vaultedPath, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        movedCategoryFiles.Add(vaultedPath);
+                                        totalMovedCount++;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (movedCategoryFiles.Count > 0)
+                        {
+                            FenceTab initialTab = new()
+                            {
+                                Title = categoryTitle,
+                                Files = movedCategoryFiles,
+                                AutoSortExtensions = defaultExtensions,
+                                SortMethod = "Name"
+                            };
+                            newFence.SetInitialTab(initialTab);
+                            newFence.FenceTitle = categoryTitle;
+                            newFence.AutoSortExtensions = defaultExtensions;
+                            newFence.Show();
+                            openFences.Add(newFence);
+                            affectedCategoryNames.Add(categoryTitle);
+                            createdFenceCount++;
+                        }
+                        else
+                        {
+                            newFence._isDeleted = true;
+                            newFence.Close();
+                        }
+                    }
+                }
+
+                foreach (MainWindow fence in modifiedExistingFences)
+                {
+                    fence.SaveCurrentTabState();
+                    fence.RefreshTabsUI();
+                    fence.SaveFenceState();
+                }
+
+                if (totalMovedCount > 0)
+                {
+                    string summary = string.Join(", ", affectedCategoryNames);
+                    MessageBox.Show($"Organized {totalMovedCount} desktop file(s) into {affectedCategoryNames.Count} fence(s):\n{summary}", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show("No desktop files needed to be organized.", "Auto Organize", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
             }
-            catch (Exception ex) { MessageBox.Show($"Error organizing files: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error organizing files: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static bool MatchesExtensionFilter(string fileExtension, string? filterExtensions)
+        {
+            if (string.IsNullOrWhiteSpace(fileExtension) || string.IsNullOrWhiteSpace(filterExtensions)) return false;
+            string[] targets = filterExtensions.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
+            foreach (string target in targets)
+            {
+                string normalized = target.StartsWith('.') ? target : "." + target;
+                if (string.Equals(fileExtension, normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static (string CategoryTitle, string DefaultExtensions) ResolveCategoryForExtension(string fileExtension)
+        {
+            if (!string.IsNullOrWhiteSpace(fileExtension))
+            {
+                foreach (var category in _fileTypeCategories)
+                {
+                    if (category.Extensions.Contains(fileExtension))
+                    {
+                        return (category.Title, category.DefaultExtensions);
+                    }
+                }
+            }
+            return ("Other Files", string.Empty);
+        }
+
+        private static bool IsDefaultFenceTitle(string? title)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return true;
+            return title.Equals("Fluid Fence", StringComparison.OrdinalIgnoreCase) ||
+                   title.Equals("My First Fence", StringComparison.OrdinalIgnoreCase) ||
+                   title.Equals("Main", StringComparison.OrdinalIgnoreCase) ||
+                   title.Equals("New Tab", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryMoveFileIntoFence(MainWindow targetFence, string desktopFilePath)
+        {
+            try
+            {
+                string vaultedPath = targetFence.MoveToVault(desktopFilePath);
+                if (!string.Equals(vaultedPath, desktopFilePath, StringComparison.OrdinalIgnoreCase) || !File.Exists(desktopFilePath))
+                {
+                    if (!targetFence._currentFiles.Contains(vaultedPath, StringComparer.OrdinalIgnoreCase))
+                    {
+                        targetFence._currentFiles.Add(vaultedPath);
+                    }
+                    return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void Menu_NewFence_Click(object sender, RoutedEventArgs e) { MainWindow newFence = new(Guid.NewGuid().ToString()) { Left = this.Left + 50, Top = this.Top + 50 }; newFence.Show(); }
@@ -1306,38 +1678,51 @@ namespace DesktopFences
                 _tabs[_activeTabIndex].PortalPath = path;
             }
 
-            try { TitleText.Text = new DirectoryInfo(path).Name + " (Portal)"; }
+            try
+            {
+                TitleText.Text = new DirectoryInfo(path).Name + " (Portal)";
+                System.Windows.Automation.AutomationProperties.SetName(this, TitleText.Text ?? string.Empty);
+            }
             catch (Exception ex) { LogError("MakePortal title", ex); }
 
-            SetupPortalWatcher();
+            _ = SetupPortalWatcherAsync();
             SaveFenceState();
         }
 
-        private async void SetupPortalWatcher()
+        private async Task SetupPortalWatcherAsync()
         {
-
             DisposePortalWatcher();
 
-            if (!Directory.Exists(_portalPath))
+            string targetPortalPath = _portalPath;
+            if (string.IsNullOrWhiteSpace(targetPortalPath) || !Directory.Exists(targetPortalPath))
             {
-
                 SchedulePortalReconnect();
                 return;
             }
 
+            _portalCts = new CancellationTokenSource();
+            var token = _portalCts.Token;
+
             try
             {
-                string[] files = await Task.Run(() => Directory.GetFileSystemEntries(_portalPath));
+                string[] files = await Task.Run(() => Directory.GetFileSystemEntries(targetPortalPath), token);
+                if (token.IsCancellationRequested || !_isPortal || !string.Equals(_portalPath, targetPortalPath, StringComparison.OrdinalIgnoreCase))
+                    return;
+
                 _currentFiles.Clear();
                 _currentFiles.AddRange(files);
 
                 RebuildPortalIcons();
             }
+            catch (OperationCanceledException) { return; }
             catch (Exception ex) { LogError("SetupPortalWatcher enumerate", ex); }
+
+            if (token.IsCancellationRequested || !_isPortal || !string.Equals(_portalPath, targetPortalPath, StringComparison.OrdinalIgnoreCase))
+                return;
 
             try
             {
-                var watcher = new FileSystemWatcher(_portalPath)
+                var watcher = new FileSystemWatcher(targetPortalPath)
                 {
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.DirectoryName,
                     InternalBufferSize = 65536,
@@ -1346,7 +1731,7 @@ namespace DesktopFences
                 watcher.Created += Portal_FileChanged;
                 watcher.Deleted += Portal_FileChanged;
                 watcher.Renamed += Portal_FileChanged;
-                watcher.Error   += (_, _) => Dispatcher.InvokeAsync(() =>
+                watcher.Error += (_, _) => Dispatcher.InvokeAsync(() =>
                 {
                     DisposePortalWatcher();
                     SchedulePortalReconnect();
@@ -1375,6 +1760,16 @@ namespace DesktopFences
 
         private void DisposePortalWatcher()
         {
+            _portalDebounceTimer?.Stop();
+
+            try
+            {
+                _portalCts?.Cancel();
+                _portalCts?.Dispose();
+            }
+            catch { }
+            _portalCts = null;
+
             var watcher = _portalWatcher;
             _portalWatcher = null;
             if (watcher is null) return;
@@ -1406,7 +1801,7 @@ namespace DesktopFences
 
                 timer.Stop();
                 _portalRetryTimer = null;
-                SetupPortalWatcher();
+                _ = SetupPortalWatcherAsync();
             };
 
             _portalRetryTimer = timer;
@@ -1422,11 +1817,13 @@ namespace DesktopFences
             }, DispatcherPriority.Background);
         }
 
-        private async void RefreshPortalUI()
+        private async Task RefreshPortalUIAsync()
         {
-            if (!Directory.Exists(_portalPath))
-            {
+            if (!_isPortal) return;
+            string targetPortalPath = _portalPath;
 
+            if (string.IsNullOrWhiteSpace(targetPortalPath) || !Directory.Exists(targetPortalPath))
+            {
                 DisposePortalWatcher();
                 if (_currentFiles.Count > 0)
                 {
@@ -1436,10 +1833,22 @@ namespace DesktopFences
                 SchedulePortalReconnect();
                 return;
             }
+
+            try
+            {
+                _portalCts?.Cancel();
+                _portalCts?.Dispose();
+            }
+            catch { }
+            _portalCts = new CancellationTokenSource();
+            var token = _portalCts.Token;
+
             long currentGen = System.Threading.Interlocked.Increment(ref _portalRefreshGeneration);
             try
             {
-                string[] newFiles = await Task.Run(() => Directory.GetFileSystemEntries(_portalPath));
+                string[] newFiles = await Task.Run(() => Directory.GetFileSystemEntries(targetPortalPath), token);
+                if (token.IsCancellationRequested || !_isPortal || !string.Equals(_portalPath, targetPortalPath, StringComparison.OrdinalIgnoreCase))
+                    return;
                 if (currentGen != System.Threading.Interlocked.Read(ref _portalRefreshGeneration)) return;
 
                 var currentSet = new HashSet<string>(_currentFiles, StringComparer.OrdinalIgnoreCase);
@@ -1468,21 +1877,30 @@ namespace DesktopFences
                     ApplySorting();
                 }
             }
+            catch (OperationCanceledException) { }
             catch { }
         }
 
         private void RefreshTabsUI()
         {
+            foreach (var timer in _tabDragTimers) timer.Stop();
+            _tabDragTimers.Clear();
+
             TabBar.SelectionChanged -= TabBar_SelectionChanged;
             TabBar.Items.Clear();
 
             foreach (var tab in _tabs)
             {
                 ListBoxItem item = new ListBoxItem { Tag = tab, Background = Brushes.Transparent };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(item, $"Tab_{tab.TabId}");
+                System.Windows.Automation.AutomationProperties.SetName(item, tab.Title ?? string.Empty);
+
                 Grid grid = new Grid();
                 TextBlock tb = new TextBlock { Text = tab.Title, VerticalAlignment = VerticalAlignment.Center };
                 TextBox tbox = new TextBox { Text = tab.Title, Visibility = Visibility.Collapsed, Width = 80, BorderThickness = new Thickness(1), Padding = new Thickness(2) };
-            ApplyInlineEditorTheme(tbox);
+                System.Windows.Automation.AutomationProperties.SetAutomationId(tbox, "TabRenameTextBox");
+                System.Windows.Automation.AutomationProperties.SetName(tbox, "Rename Tab");
+                ApplyInlineEditorTheme(tbox);
 
                 grid.Children.Add(tb);
                 grid.Children.Add(tbox);
@@ -1509,6 +1927,7 @@ namespace DesktopFences
                 item.PreviewMouseMove += (s, e) => { HandleTabDrag(e, item, tab); };
 
                 DispatcherTimer hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+                _tabDragTimers.Add(hoverTimer);
                 hoverTimer.Tick += (ts, te) =>
                 {
                     hoverTimer.Stop();
@@ -1527,6 +1946,7 @@ namespace DesktopFences
 
             if (_tabs.Count == 1) TitleText.Text = _tabs[0].Title;
             else if (string.IsNullOrWhiteSpace(TitleText.Text)) TitleText.Text = "Fluid Fence";
+            System.Windows.Automation.AutomationProperties.SetName(this, TitleText.Text ?? string.Empty);
 
             if (_activeTabIndex >= _tabs.Count) _activeTabIndex = Math.Max(0, _tabs.Count - 1);
 
@@ -1646,7 +2066,11 @@ namespace DesktopFences
                 {
                     tab.Title = tbox.Text;
                     tb.Text = tbox.Text;
-                    if (_tabs.Count == 1) TitleText.Text = tbox.Text;
+                    if (_tabs.Count == 1)
+                    {
+                        TitleText.Text = tbox.Text;
+                        System.Windows.Automation.AutomationProperties.SetName(this, TitleText.Text ?? string.Empty);
+                    }
                 }
                 tbox.Visibility = Visibility.Collapsed;
                 tb.Visibility = Visibility.Visible;
@@ -1657,7 +2081,7 @@ namespace DesktopFences
             tbox.KeyDown += (s, e) => { if (e.Key == Key.Enter) CommitRename(); else if (e.Key == Key.Escape) { isRenaming = false; tbox.Visibility = Visibility.Collapsed; tb.Visibility = Visibility.Visible; } };
         }
 
-        private void DeleteTab(FenceTab tab)
+        private async void DeleteTab(FenceTab tab)
         {
             if (_tabs.Count <= 1)
             {
@@ -1688,21 +2112,16 @@ namespace DesktopFences
                 SaveFenceState();
             }
 
-            System.Threading.Tasks.Task.Delay(50).ContinueWith(_ =>
+            await Task.Delay(50);
+            if (this.IsLoaded && !this.IsMouseOver && !_isContextMenuOpen && !_isDraggingSelectionBox)
             {
-                Dispatcher.Invoke(() =>
+                AnimateGhostMode(false);
+                if (_isRolledUp && _isTemporarilyRevealed)
                 {
-                    if (!this.IsMouseOver && !_isContextMenuOpen && !_isDraggingSelectionBox)
-                    {
-                        AnimateGhostMode(false);
-                        if (_isRolledUp && _isTemporarilyRevealed)
-                        {
-                            AnimateRollUp();
-                            _isTemporarilyRevealed = false;
-                        }
-                    }
-                });
-            });
+                    AnimateRollUp();
+                    _isTemporarilyRevealed = false;
+                }
+            }
         }
 
         private void HandleTabDrag(MouseEventArgs e, ListBoxItem item, FenceTab tab)
@@ -1778,7 +2197,7 @@ namespace DesktopFences
             _isPortal = tab.IsPortal;
             _portalPath = tab.PortalPath;
 
-            if (_isPortal) SetupPortalWatcher();
+            if (_isPortal) _ = SetupPortalWatcherAsync();
             else { DisposePortalWatcher(); }
 
             ApplySorting();
@@ -1808,18 +2227,34 @@ namespace DesktopFences
 
         private void TransferTabFiles(FenceTab tab, string sourceFenceId)
         {
-            string sourceStorageDir = Path.Combine(App.ConfigFolder, "Storage", sourceFenceId);
-            string targetStorageDir = Path.Combine(App.ConfigFolder, "Storage", this.FenceId);
+            if (string.IsNullOrWhiteSpace(sourceFenceId) ||
+                Path.GetFileName(sourceFenceId) != sourceFenceId ||
+                sourceFenceId is "." or ".." ||
+                sourceFenceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                return;
+            }
+
+            string sourceStorageDir = Path.GetFullPath(Path.Combine(App.ConfigFolder, "Storage", sourceFenceId));
+            string targetStorageDir = Path.GetFullPath(Path.Combine(App.ConfigFolder, "Storage", this.FenceId));
 
             if (!Directory.Exists(sourceStorageDir)) return;
             Directory.CreateDirectory(targetStorageDir);
 
+            string sourcePrefix = sourceStorageDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
             for (int i = 0; i < tab.Files.Count; i++)
             {
                 string filePath = tab.Files[i];
-                if (filePath.StartsWith(sourceStorageDir, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(filePath)) continue;
+
+                string fullFilePath;
+                try { fullFilePath = Path.GetFullPath(filePath); }
+                catch { continue; }
+
+                if (fullFilePath.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    string fileName = Path.GetFileName(filePath);
+                    string fileName = Path.GetFileName(fullFilePath);
                     string newPath = Path.Combine(targetStorageDir, fileName);
 
                     int counter = 1;
@@ -1833,8 +2268,8 @@ namespace DesktopFences
 
                     try
                     {
-                        if (Directory.Exists(filePath)) Directory.Move(filePath, newPath);
-                        else if (File.Exists(filePath)) File.Move(filePath, newPath);
+                        if (Directory.Exists(fullFilePath)) Directory.Move(fullFilePath, newPath);
+                        else if (File.Exists(fullFilePath)) File.Move(fullFilePath, newPath);
                         tab.Files[i] = newPath;
                     }
                     catch { }
@@ -1963,11 +2398,41 @@ namespace DesktopFences
                 {
                     switch (_saveSortMethod)
                     {
-                        case "Name": _currentFiles.Sort((a, b) => string.Compare(Path.GetFileName(a), Path.GetFileName(b), StringComparison.OrdinalIgnoreCase)); break;
-                        case "Size": _currentFiles.Sort((a, b) => GetFileSize(b).CompareTo(GetFileSize(a))); break;
-                        case "Type": _currentFiles.Sort((a, b) => string.Compare(Path.GetExtension(a), Path.GetExtension(b), StringComparison.OrdinalIgnoreCase)); break;
-                        case "DateMod": _currentFiles.Sort((a, b) => File.GetLastWriteTime(b).CompareTo(File.GetLastWriteTime(a))); break;
-                        case "DateCre": _currentFiles.Sort((a, b) => File.GetCreationTime(b).CompareTo(File.GetCreationTime(a))); break;
+                        case "Name":
+                        {
+                            var keys = new Dictionary<string, string>(_currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+                            foreach (var f in _currentFiles) keys[f] = Path.GetFileName(f);
+                            _currentFiles.Sort((a, b) => string.Compare(keys.GetValueOrDefault(a), keys.GetValueOrDefault(b), StringComparison.OrdinalIgnoreCase));
+                            break;
+                        }
+                        case "Size":
+                        {
+                            var keys = new Dictionary<string, long>(_currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+                            foreach (var f in _currentFiles) keys[f] = GetFileSize(f);
+                            _currentFiles.Sort((a, b) => keys.GetValueOrDefault(b).CompareTo(keys.GetValueOrDefault(a)));
+                            break;
+                        }
+                        case "Type":
+                        {
+                            var keys = new Dictionary<string, string>(_currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+                            foreach (var f in _currentFiles) keys[f] = Path.GetExtension(f);
+                            _currentFiles.Sort((a, b) => string.Compare(keys.GetValueOrDefault(a), keys.GetValueOrDefault(b), StringComparison.OrdinalIgnoreCase));
+                            break;
+                        }
+                        case "DateMod":
+                        {
+                            var keys = new Dictionary<string, DateTime>(_currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+                            foreach (var f in _currentFiles) { try { keys[f] = File.GetLastWriteTimeUtc(f); } catch { keys[f] = DateTime.MinValue; } }
+                            _currentFiles.Sort((a, b) => keys.GetValueOrDefault(b).CompareTo(keys.GetValueOrDefault(a)));
+                            break;
+                        }
+                        case "DateCre":
+                        {
+                            var keys = new Dictionary<string, DateTime>(_currentFiles.Count, StringComparer.OrdinalIgnoreCase);
+                            foreach (var f in _currentFiles) { try { keys[f] = File.GetCreationTimeUtc(f); } catch { keys[f] = DateTime.MinValue; } }
+                            _currentFiles.Sort((a, b) => keys.GetValueOrDefault(b).CompareTo(keys.GetValueOrDefault(a)));
+                            break;
+                        }
                     }
                 }
                 catch { }
@@ -2090,11 +2555,27 @@ namespace DesktopFences
             double imageHeight = CurrentIconSize;
             System.Windows.Controls.Image iconImage = new() { Width = CurrentIconSize, Height = imageHeight, Margin = new Thickness(0, 0, 0, 5), SnapsToDevicePixels = true, UseLayoutRounding = true, Stretch = Stretch.Uniform };
 
+            string fileExt = Path.GetExtension(currentFilePath);
+            string nameWithoutExt = Path.GetFileNameWithoutExtension(currentFilePath);
+            bool isShortcutOrUrl = fileExt.Equals(".lnk", StringComparison.OrdinalIgnoreCase) || fileExt.Equals(".url", StringComparison.OrdinalIgnoreCase);
+            bool hasDoubleExt = !string.IsNullOrEmpty(Path.GetExtension(nameWithoutExt));
+            string displayLabel = Directory.Exists(currentFilePath)
+                ? Path.GetFileName(currentFilePath)
+                : ((isShortcutOrUrl && !hasDoubleExt)
+                    ? nameWithoutExt
+                    : ((hasDoubleExt && _dangerousExtensions.Contains(fileExt))
+                        ? Path.GetFileName(currentFilePath)
+                        : (isShortcutOrUrl ? nameWithoutExt : Path.GetFileName(currentFilePath))));
+
             Border imageBorder = new Border { CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(0), Child = iconImage, ClipToBounds = true };
-            TextBlock textBlock = new() { Text = Path.GetFileNameWithoutExtension(currentFilePath), TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxHeight = 35 };
+            TextBlock textBlock = new() { Text = displayLabel, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxHeight = 35 };
             textBlock.SetResourceReference(TextBlock.ForegroundProperty, "CustomTextPrimaryBrush");
             textBlock.Effect = BuildLabelHalo();
             imageBorder.SetResourceReference(Border.BorderBrushProperty, "CustomBorderSubtleBrush");
+
+            System.Windows.Automation.AutomationProperties.SetAutomationId(itemContainer, $"Icon_{Path.GetFileName(currentFilePath)}");
+            System.Windows.Automation.AutomationProperties.SetName(itemContainer, textBlock.Text);
+
             itemContainer.Children.Add(imageBorder); itemContainer.Children.Add(textBlock); IconPanel.Children.Add(itemContainer);
 
             try
@@ -2132,6 +2613,8 @@ namespace DesktopFences
                     TextWrapping = TextWrapping.Wrap,
                     Padding = new Thickness(2)
                 };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(renameBox, "IconRenameTextBox");
+                System.Windows.Automation.AutomationProperties.SetName(renameBox, "Rename File");
                 ApplyInlineEditorTheme(renameBox);
                 itemContainer.Children.Add(renameBox);
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -2177,7 +2660,10 @@ namespace DesktopFences
                             string ext = isDirectory ? string.Empty : Path.GetExtension(currentFilePath);
                             if (dir is not null)
                             {
-                                string newPath = Path.GetFullPath(Path.Combine(dir, proposedName + ext));
+                                string finalFileName = (!string.IsNullOrEmpty(ext) && proposedName.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                                    ? proposedName
+                                    : proposedName + ext;
+                                string newPath = Path.GetFullPath(Path.Combine(dir, finalFileName));
                                 string fullDir = Path.GetFullPath(dir);
 
                                 if (newPath.StartsWith(fullDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
@@ -2214,7 +2700,7 @@ namespace DesktopFences
                                         if (_isPortal)
                                         {
                                             if (MessageBox.Show(
-                                                $"A file named '{proposedName}{ext}' already exists in this folder.\n\nDo you want to replace it?",
+                                                $"A file named '{finalFileName}' already exists in this folder.\n\nDo you want to replace it?",
                                                 "Confirm Rename",
                                                 MessageBoxButton.YesNo,
                                                 MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -2310,8 +2796,21 @@ namespace DesktopFences
                             if (_isPortal)
                             {
                                 string ext = Path.GetExtension(currentFilePath).ToLowerInvariant();
-                                string[] dangerousExts = [".exe", ".com", ".msi", ".msc", ".cpl", ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".ws", ".hta", ".scr", ".pif", ".reg", ".jar", ".appx", ".msix", ".scf"];
-                                if (dangerousExts.Contains(ext))
+                                if (ext == ".lnk")
+                                {
+                                    string resolvedTarget = ResolveShortcutTarget(currentFilePath);
+                                    bool resolutionFailed = string.IsNullOrWhiteSpace(resolvedTarget)
+                                        || string.Equals(resolvedTarget, currentFilePath, StringComparison.OrdinalIgnoreCase)
+                                        || (!File.Exists(resolvedTarget) && !Directory.Exists(resolvedTarget));
+                                    string targetExt = Path.GetExtension(resolvedTarget);
+                                    if (resolutionFailed || _dangerousExtensions.Contains(targetExt))
+                                    {
+                                        string targetDisplay = resolutionFailed ? "(unresolved target)" : resolvedTarget;
+                                        if (MessageBox.Show($"\"{Path.GetFileName(currentFilePath)}\" is a shortcut pointing to:\n{targetDisplay}\n\nAre you sure you want to run this shortcut from this Folder Portal?", "Security Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                                            return;
+                                    }
+                                }
+                                else if (_dangerousExtensions.Contains(ext))
                                 {
                                     if (MessageBox.Show($"\"{Path.GetFileName(currentFilePath)}\" is an executable or script.\n\nAre you sure you want to run this file from this Folder Portal?", "Security Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                                         return;
@@ -2402,27 +2901,30 @@ namespace DesktopFences
         {
             try
             {
-                dynamic? shell = GetShell();
-                if (shell is null) return shortcutPath;
-
-                var shortcut = shell.CreateShortcut(shortcutPath);
-                try
+                lock (_shellGate)
                 {
-                    string iconLocation = shortcut.IconLocation;
-                    if (!string.IsNullOrEmpty(iconLocation))
+                    dynamic? shell = GetShell();
+                    if (shell is null) return shortcutPath;
+
+                    var shortcut = shell.CreateShortcut(shortcutPath);
+                    try
                     {
-                        string[] parts = iconLocation.Split(',');
-                        if (parts.Length > 0 && File.Exists(parts[0])) return parts[0];
+                        string targetPath = shortcut.TargetPath;
+                        if (!string.IsNullOrEmpty(targetPath) && (File.Exists(targetPath) || Directory.Exists(targetPath))) return targetPath;
+
+                        string iconLocation = shortcut.IconLocation;
+                        if (!string.IsNullOrEmpty(iconLocation))
+                        {
+                            string[] parts = iconLocation.Split(',');
+                            if (parts.Length > 0 && File.Exists(parts[0])) return parts[0];
+                        }
                     }
-
-                    string targetPath = shortcut.TargetPath;
-                    if (File.Exists(targetPath) || Directory.Exists(targetPath)) return targetPath;
-                }
-                finally
-                {
-                    if (shortcut is not null && Marshal.IsComObject(shortcut))
+                    finally
                     {
-                        try { Marshal.ReleaseComObject(shortcut); } catch { }
+                        if (shortcut is not null && Marshal.IsComObject(shortcut))
+                        {
+                            try { Marshal.FinalReleaseComObject(shortcut); } catch { }
+                        }
                     }
                 }
             }
@@ -2467,21 +2969,22 @@ namespace DesktopFences
                         if (!iconFile.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase) && !iconFile.StartsWith("//", StringComparison.OrdinalIgnoreCase) && File.Exists(iconFile))
                         {
                             uint sizeRequest = (uint)((16 << 16) | 256);
-                            int res = NativeMethods.SHDefExtractIcon(iconFile, iconIndex, 0, out IntPtr hIconL, out IntPtr hIconS, sizeRequest);
-                            if (res == 0 && hIconL != IntPtr.Zero)
+                            IntPtr hIconL = IntPtr.Zero;
+                            IntPtr hIconS = IntPtr.Zero;
+                            try
                             {
-                                ImageSource imgSrc;
-                                try
+                                int res = NativeMethods.SHDefExtractIcon(iconFile, iconIndex, 0, out hIconL, out hIconS, sizeRequest);
+                                if (res == 0 && hIconL != IntPtr.Zero)
                                 {
-                                    imgSrc = Imaging.CreateBitmapSourceFromHIcon(hIconL, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                                    ImageSource imgSrc = Imaging.CreateBitmapSourceFromHIcon(hIconL, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
                                     imgSrc.Freeze();
+                                    return imgSrc;
                                 }
-                                finally
-                                {
-                                    NativeMethods.DestroyIcon(hIconL);
-                                    if (hIconS != IntPtr.Zero) NativeMethods.DestroyIcon(hIconS);
-                                }
-                                return imgSrc;
+                            }
+                            finally
+                            {
+                                if (hIconL != IntPtr.Zero) NativeMethods.DestroyIcon(hIconL);
+                                if (hIconS != IntPtr.Zero) NativeMethods.DestroyIcon(hIconS);
                             }
                         }
                     }
@@ -2538,7 +3041,31 @@ namespace DesktopFences
             }
             catch (Exception ex) { LogError($"Shell API Factory Failed: {filePath}", ex); }
 
-            if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".ico", StringComparison.OrdinalIgnoreCase) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)) { try { uint sizeRequest = (uint)((16 << 16) | 256); int res = NativeMethods.SHDefExtractIcon(filePath, 0, 0, out IntPtr hIconLarge, out IntPtr hIconSmall, sizeRequest); if (res == 0 && hIconLarge != IntPtr.Zero) { ImageSource imgSrc; try { imgSrc = Imaging.CreateBitmapSourceFromHIcon(hIconLarge, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions()); imgSrc.Freeze(); } finally { NativeMethods.DestroyIcon(hIconLarge); if (hIconSmall != IntPtr.Zero) NativeMethods.DestroyIcon(hIconSmall); } return imgSrc; } } catch (Exception ex) { LogError($"Binary Extraction Failed: {filePath}", ex); } }
+            if (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".ico", StringComparison.OrdinalIgnoreCase) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    uint sizeRequest = (uint)((16 << 16) | 256);
+                    IntPtr hIconLarge = IntPtr.Zero;
+                    IntPtr hIconSmall = IntPtr.Zero;
+                    try
+                    {
+                        int res = NativeMethods.SHDefExtractIcon(filePath, 0, 0, out hIconLarge, out hIconSmall, sizeRequest);
+                        if (res == 0 && hIconLarge != IntPtr.Zero)
+                        {
+                            ImageSource imgSrc = Imaging.CreateBitmapSourceFromHIcon(hIconLarge, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                            imgSrc.Freeze();
+                            return imgSrc;
+                        }
+                    }
+                    finally
+                    {
+                        if (hIconLarge != IntPtr.Zero) NativeMethods.DestroyIcon(hIconLarge);
+                        if (hIconSmall != IntPtr.Zero) NativeMethods.DestroyIcon(hIconSmall);
+                    }
+                }
+                catch (Exception ex) { LogError($"Binary Extraction Failed: {filePath}", ex); }
+            }
             try { NativeMethods.SHFILEINFO shinfo = new(); IntPtr result = NativeMethods.SHGetFileInfo(filePath, 0, ref shinfo, (uint)Marshal.SizeOf(shinfo), 0x000000100 | 0x000000000); if (result != IntPtr.Zero && shinfo.hIcon != IntPtr.Zero) { ImageSource imgSrc; try { imgSrc = Imaging.CreateBitmapSourceFromHIcon(shinfo.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions()); imgSrc.Freeze(); } finally { NativeMethods.DestroyIcon(shinfo.hIcon); } return imgSrc; } } catch (Exception ex) { LogError($"Win32 Fallback Failed: {filePath}", ex); }
             return null;
         }
@@ -2546,34 +3073,19 @@ namespace DesktopFences
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             string globalConfigPath = Path.Combine(App.ConfigFolder, "global_config.json");
+            bool isFirstRun = !File.Exists(globalConfigPath);
             bool showInTaskbar = true;
+            GlobalConfig? loadedConfig = null;
 
-            if (File.Exists(globalConfigPath))
+            try
             {
-                try {
-                    string json = await File.ReadAllTextAsync(globalConfigPath);
-                    if (JsonSerializer.Deserialize<GlobalConfig>(json) is GlobalConfig config)
-                    {
-                        showInTaskbar = config.ShowTaskbarIcon;
-                        _globalGhostMode = config.EnableGhostMode;
-
-                        var active = Core.Theming.ThemeCatalog.Get(
-                            !string.IsNullOrWhiteSpace(config.ThemeId) ? config.ThemeId : config.Theme.ThemeName);
-
-                        ApplyTheme(new Core.ThemeSettings
-                        {
-                            ThemeName           = active.Name,
-                            BackgroundColor     = active.Colors.Background    ?? "",
-                            HeaderColor         = active.Colors.Header        ?? "",
-                            FontColor           = active.Colors.TextPrimary   ?? "",
-                            SecondaryFontColor  = active.Colors.TextSecondary ?? "",
-                            AccentColor         = active.Colors.Accent        ?? "",
-                            BackgroundMediaPath = config.Theme.BackgroundMediaPath,
-                            MediaOpacity        = config.Theme.MediaOpacity
-                        });
-                    }
-                } catch { }
+                loadedConfig = await ConfigStore.ReadAsync();
+                showInTaskbar = loadedConfig.ShowTaskbarIcon;
+                _globalGhostMode = loadedConfig.EnableGhostMode;
             }
+            catch { }
+
+            this.ShowInTaskbar = showInTaskbar;
 
             try
             {
@@ -2591,6 +3103,28 @@ namespace DesktopFences
             catch (Exception ex) { LogError("SweepStaleTempFiles", ex); }
 
             await LoadFenceStateAsync();
+
+            if (loadedConfig is not null)
+            {
+                try
+                {
+                    var active = Core.Theming.ThemeCatalog.Get(
+                        !string.IsNullOrWhiteSpace(loadedConfig.ThemeId) ? loadedConfig.ThemeId : loadedConfig.Theme.ThemeName);
+
+                    ApplyTheme(new Core.ThemeSettings
+                    {
+                        ThemeName           = active.Name,
+                        BackgroundColor     = active.Colors.Background    ?? "",
+                        HeaderColor         = active.Colors.Header        ?? "",
+                        FontColor           = active.Colors.TextPrimary   ?? "",
+                        SecondaryFontColor  = active.Colors.TextSecondary ?? "",
+                        AccentColor         = active.Colors.Accent        ?? "",
+                        BackgroundMediaPath = loadedConfig.Theme.BackgroundMediaPath,
+                        MediaOpacity        = loadedConfig.Theme.MediaOpacity
+                    });
+                }
+                catch { }
+            }
 
             ResolveBodyColor();
 
@@ -2613,10 +3147,20 @@ namespace DesktopFences
             };
             HeaderContextMenu.Closed += (s, args) => HandleMenuClosed();
             this.PreviewMouseRightButtonDown += (s, args) => _isContextMenuOpen = true;
-            if (SearchBox is not null && MainGrid is not null) { SearchBox.KeyDown += SearchBox_KeyDown; }
 
-            if (!File.Exists(globalConfigPath)) { GlobalConfig newConfig = new() { FirstRunComplete = true, ShowTaskbarIcon = true, RestoreFilesOnDelete = true, EnableGhostMode = false }; File.WriteAllText(globalConfigPath, JsonSerializer.Serialize(newConfig, _jsonOptions)); SettingsWindow settings = new(this, true) { Owner = this }; settings.ShowDialog(); }
-            this.ShowInTaskbar = showInTaskbar; if (!this.IsMouseOver) AnimateGhostMode(false);
+            if (isFirstRun)
+            {
+                await ConfigStore.UpdateAsync(c =>
+                {
+                    c.FirstRunComplete = true;
+                    c.ShowTaskbarIcon = true;
+                    c.RestoreFilesOnDelete = true;
+                    c.EnableGhostMode = false;
+                });
+                SettingsWindow settings = new(this, true) { Owner = this };
+                settings.ShowDialog();
+            }
+            if (!this.IsMouseOver) AnimateGhostMode(false);
 
             ApplyPendingPortal();
 
@@ -2720,7 +3264,19 @@ namespace DesktopFences
             DisposePortalWatcher();
 
             if (_portalRetryTimer != null) { _portalRetryTimer.Stop(); _portalRetryTimer = null; }
+            _portalDebounceTimer?.Stop();
             _saveTimer?.Stop();
+
+            foreach (var timer in _tabDragTimers) timer.Stop();
+            _tabDragTimers.Clear();
+
+            try
+            {
+                BackgroundMedia?.Stop();
+                BackgroundMedia?.Close();
+                if (BackgroundMedia != null) BackgroundMedia.Source = null;
+            }
+            catch { }
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)

@@ -24,7 +24,15 @@ namespace DesktopFences
                     return _cachedWallpaperColor.Value;
             }
 
-            var sampled = Core.Theming.WallpaperSampler.AverageColor();
+            Color? sampled = null;
+            var sample = Core.Theming.WallpaperSampler.CaptureSingle();
+            if (sample is not null)
+            {
+                var palette = Core.Theming.PaletteExtractor.Extract(sample.Bgra, sample.Width, sample.Height);
+                sampled = Core.Theming.PaletteExtractor.SelectSeed(palette)
+                          ?? Core.Theming.WallpaperSampler.AverageColor();
+            }
+
             Color result = sampled ?? Colors.Black;
 
             if (sampled is null)
@@ -38,6 +46,8 @@ namespace DesktopFences
 
             return result;
         }
+
+        public static Color GetWallpaperMediaColor() => GetDominantWallpaperColor();
     }
 }
 

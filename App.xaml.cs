@@ -31,17 +31,27 @@ namespace DesktopFences
 
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
-        public static string ConfigFolder { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopFences");
+        public static string ConfigFolder { get; } =
+            Environment.GetEnvironmentVariable("FLUIDFENCES_CONFIG_DIR") is { Length: > 0 } customDir
+                ? Path.GetFullPath(customDir)
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopFences");
 
-        private const string SingleInstanceMutexName = @"Local\FluidFences.SingleInstance";
-        private const string SurfaceSignalName       = @"Local\FluidFences.Surface";
-        private const string SettingsSignalName      = @"Local\FluidFences.OpenSettings";
-        private const string ExitSignalName          = @"Local\FluidFences.Exit";
+        private static readonly string InstanceSuffix =
+            Environment.GetEnvironmentVariable("FLUIDFENCES_INSTANCE_ID") is { Length: > 0 } id
+                ? $".{id}"
+                : string.Empty;
+
+        private static string SingleInstanceMutexName => @"Local\FluidFences.SingleInstance" + InstanceSuffix;
+        private static string SurfaceSignalName       => @"Local\FluidFences.Surface" + InstanceSuffix;
+        private static string SettingsSignalName      => @"Local\FluidFences.OpenSettings" + InstanceSuffix;
+        private static string ExitSignalName          => @"Local\FluidFences.Exit" + InstanceSuffix;
 
         private static Mutex? _singleInstanceMutex;
+        private static bool _ownsMutex;
         private static EventWaitHandle? _surfaceSignal;
         private static EventWaitHandle? _settingsSignal;
         private static EventWaitHandle? _exitSignal;
+        private static readonly SemaphoreSlim _snapshotGate = new(1, 1);
 
         private const string SettingsArgument = "--settings";
         private const string ExitArgument     = "--exit";
@@ -50,14 +60,17 @@ namespace DesktopFences
         {
             base.OnStartup(e);
 
-            try {
-                System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Warning;
-                System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Add(new System.Diagnostics.TextWriterTraceListener(Path.Combine(ConfigFolder, "wpf_trace.log")));
-                
-                this.DispatcherUnhandledException += (s, args) => {
-                    try { File.AppendAllText(Path.Combine(ConfigFolder, "debug_exceptions.log"), $"[Unhandled] {args.Exception.Message}\n{args.Exception.StackTrace}\n"); } catch { }
-                };
-            } catch { }
+            this.DispatcherUnhandledException += (s, args) =>
+            {
+                try
+                {
+                    Directory.CreateDirectory(ConfigFolder);
+                    File.AppendAllText(
+                        Path.Combine(ConfigFolder, "debug_exceptions.log"),
+                        $"[Unhandled] {args.Exception.Message}\n{args.Exception.StackTrace}\n");
+                }
+                catch { }
+            };
 
             bool wantsSettings = e.Args.Any(a =>
                 string.Equals(a, SettingsArgument, StringComparison.OrdinalIgnoreCase));
@@ -85,7 +98,6 @@ namespace DesktopFences
                 return;
             }
 
-
             string oldFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DesktopFences");
             if (Directory.Exists(oldFolder))
             {
@@ -112,6 +124,14 @@ namespace DesktopFences
 
             Directory.CreateDirectory(ConfigFolder);
             Directory.CreateDirectory(Path.Combine(ConfigFolder, "Fences"));
+
+            try
+            {
+                System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Warning;
+                System.Diagnostics.PresentationTraceSources.DataBindingSource.Listeners.Add(
+                    new System.Diagnostics.TextWriterTraceListener(Path.Combine(ConfigFolder, "wpf_trace.log")));
+            }
+            catch { }
 
             InitialiseTheming();
 
@@ -146,17 +166,25 @@ namespace DesktopFences
 
                 if (!createdNew)
                 {
+                    _ownsMutex = false;
                     _singleInstanceMutex.Dispose();
                     _singleInstanceMutex = null;
                     return false;
                 }
+
+                _ownsMutex = true;
+                return true;
+            }
+            catch (AbandonedMutexException)
+            {
+                _ownsMutex = true;
                 return true;
             }
             catch (Exception ex)
             {
-
                 LogError("ClaimSingleInstance", ex);
-                return true;
+                _ownsMutex = false;
+                return false;
             }
         }
 
@@ -246,7 +274,7 @@ namespace DesktopFences
             catch (Exception ex) { LogError("SurfaceFromSecondLaunch", ex); }
         }
 
-        public static string ActiveThemeId { get; set; } = "fluid-glass";
+        public static string ActiveThemeId { get; set; } = "obsidian-prism";
 
         private static void InitialiseTheming()
         {
@@ -335,14 +363,15 @@ namespace DesktopFences
             catch { }
         }
 
-        private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
+        private async void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
         {
-            DesktopFences.MainWindow.InvalidateScreenCache();
-            ThemeUtility.InvalidateWallpaperCache();
-
-            _ = System.Threading.Tasks.Task.Delay(1000).ContinueWith(_ =>
+            try
             {
-                Dispatcher.InvokeAsync(() =>
+                DesktopFences.MainWindow.InvalidateScreenCache();
+                ThemeUtility.InvalidateWallpaperCache();
+
+                await System.Threading.Tasks.Task.Delay(1000);
+                await Dispatcher.InvokeAsync(() =>
                 {
                     var fences = Current.Windows.OfType<MainWindow>().ToArray();
                     foreach (var fence in fences)
@@ -350,7 +379,11 @@ namespace DesktopFences
                         if (fence.IsLoaded) fence.ClampToScreen();
                     }
                 });
-            });
+            }
+            catch (Exception ex)
+            {
+                LogError("DisplaySettingsChanged", ex);
+            }
         }
 
         private void ComponentDispatcher_ThreadPreprocessMessage(ref MSG msg, ref bool handled)
@@ -377,6 +410,7 @@ namespace DesktopFences
 
         public static async Task SaveCurrentLayoutAsync()
         {
+            await _snapshotGate.WaitAsync();
             try
             {
                 string snapshotPath = Path.Combine(ConfigFolder, "snapshot.json");
@@ -408,10 +442,12 @@ namespace DesktopFences
                 File.Move(tempPath, snapshotPath, overwrite: true);
             }
             catch (Exception ex) { LogError("SaveCurrentLayout", ex); }
+            finally { _snapshotGate.Release(); }
         }
 
         public static async Task RestoreLayoutSnapshotAsync()
         {
+            await _snapshotGate.WaitAsync();
             try
             {
                 string snapshotPath = Path.Combine(ConfigFolder, "snapshot.json");
@@ -437,6 +473,7 @@ namespace DesktopFences
                 }
             }
             catch (Exception ex) { LogError("RestoreLayoutSnapshot", ex); }
+            finally { _snapshotGate.Release(); }
         }
 
         private static async void RestoreSavedFences()
@@ -489,6 +526,7 @@ namespace DesktopFences
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add("Create New Fence", null, (s, e) => CreateNewFence());
             trayMenu.Items.Add("Create Folder Portal...", null, (s, e) => CreateNewPortal());
+            trayMenu.Items.Add("Auto-Organize Desktop", null, (s, e) => DesktopFences.MainWindow.AutoOrganizeDesktop());
             trayMenu.Items.Add("Check for Updates", null, (s, e) => _ = Updater.CheckAndApplyUpdateAsync(silentCheck: false));
             trayMenu.Items.Add("Open Settings", null, (s, e) => OpenSettings());
             trayMenu.Items.Add(new ToolStripSeparator());
@@ -496,6 +534,27 @@ namespace DesktopFences
 
             _trayIcon.ContextMenuStrip = trayMenu;
             _trayIcon.DoubleClick += (s, e) => OpenSettings();
+        }
+
+        private void DisposeTrayIcon()
+        {
+            if (_trayIcon is null) return;
+            try
+            {
+                _trayIcon.Visible = false;
+                var menu = _trayIcon.ContextMenuStrip;
+                var icon = _trayIcon.Icon;
+                _trayIcon.ContextMenuStrip = null;
+                _trayIcon.Icon = null;
+                menu?.Dispose();
+                icon?.Dispose();
+                _trayIcon.Dispose();
+            }
+            catch { }
+            finally
+            {
+                _trayIcon = null;
+            }
         }
 
         private static void CreateNewFence() { MainWindow newFence = new(Guid.NewGuid().ToString()); newFence.Show(); }
@@ -541,11 +600,7 @@ namespace DesktopFences
 
         private async void ExitApp()
         {
-            if (_trayIcon is not null)
-            {
-                _trayIcon.Visible = false;
-                _trayIcon.Dispose();
-            }
+            DisposeTrayIcon();
 
             try
             {
@@ -565,14 +620,18 @@ namespace DesktopFences
             ComponentDispatcher.ThreadPreprocessMessage -= ComponentDispatcher_ThreadPreprocessMessage;
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             NativeMethods.UnregisterHotKey(IntPtr.Zero, HOTKEY_ID);
-            _trayIcon?.Dispose();
+            DisposeTrayIcon();
 
             try
             {
                 _surfaceSignal?.Dispose();
                 _settingsSignal?.Dispose();
                 _exitSignal?.Dispose();
-                _singleInstanceMutex?.ReleaseMutex();
+                if (_ownsMutex)
+                {
+                    _singleInstanceMutex?.ReleaseMutex();
+                    _ownsMutex = false;
+                }
                 _singleInstanceMutex?.Dispose();
             }
             catch (Exception ex) { LogError("ReleaseSingleInstance", ex); }

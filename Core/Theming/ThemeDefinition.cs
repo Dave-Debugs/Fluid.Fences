@@ -21,6 +21,10 @@ namespace DesktopFences.Core.Theming
 
         [JsonPropertyName("baseTheme")] public string BaseTheme { get; set; } = "Dark";
 
+        [JsonPropertyName("pattern")] public string? Pattern { get; set; }
+
+        [JsonPropertyName("loopFile")] public string? LoopFile { get; set; }
+
         [JsonIgnore] public bool IsBuiltIn { get; set; }
 
         [JsonIgnore] public string? SourcePath { get; set; }
@@ -33,13 +37,70 @@ namespace DesktopFences.Core.Theming
         [JsonPropertyName("customTokens")]
         public Dictionary<string, string> CustomTokens { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+        public ThemeDefinition Clone() => ThemeCatalog.Clone(this);
+
         public override string ToString() => string.IsNullOrWhiteSpace(Name) ? (Id ?? "Theme") : Name;
 
         public static readonly ThemeDefinition Fallback = new()
         {
-            Id = "fluid-glass",
+            Id = "obsidian-prism",
             Name = "Fluid Glass (Default)",
-            BaseTheme = "Dark"
+            BaseTheme = "Dark",
+            Colors = new ThemeColors
+            {
+                Primary = "#FF0078D4",
+                PrimaryHover = "#FF1084DF",
+                PrimaryPressed = "#FF006CBE",
+                Secondary = "#FF2B88D8",
+                Accent = "#FF0078D4",
+                Background = "#991E1E24",
+                Surface = "#2EFFFFFF",
+                SurfaceSubtle = "#19FFFFFF",
+                SurfaceHover = "#1CFFFFFF",
+                SurfaceSelected = "#38FFFFFF",
+                Header = "#CC141418",
+                Border = "#4DFFFFFF",
+                BorderSubtle = "#24FFFFFF",
+                FocusRing = "#FF0078D4",
+                TextPrimary = "#FFFFFFFF",
+                TextSecondary = "#FFB0B0B8",
+                TextDisabled = "#FF6D6D75",
+                TextOnAccent = "#FFFFFFFF",
+                Glyph = "#FFB0B0B8",
+                GlyphHover = "#FFFFFFFF",
+                Success = "#FF107C10",
+                Error = "#FFE81123",
+                Warning = "#FFFFB900",
+                Info = "#FF0078D4",
+                SelectionFill = "#330078D4",
+                SelectionStroke = "#FF0078D4",
+                DropTarget = "#550078D4",
+                ScrollThumb = "#4DFFFFFF",
+                ScrollThumbHover = "#8CFFFFFF",
+                ScrollThumbActive = "#C4FFFFFF"
+            },
+            Shape = new ThemeShape
+            {
+                CornerRadius = 8,
+                CornerRadiusSmall = 4,
+                BorderThickness = 1,
+                ShadowOpacity = 0.35,
+                ShadowBlurRadius = 16,
+                ShadowDepth = 2
+            },
+            Typography = new ThemeTypography
+            {
+                FontFamily = "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial",
+                MonospaceFontFamily = "Cascadia Mono, Consolas, Courier New",
+                Scale = 1.0,
+                TitleWeight = "SemiBold"
+            },
+            Motion = new ThemeMotion
+            {
+                SpeedMultiplier = 1.0,
+                RollUpStyle = "Glass",
+                ThemeTransitionMs = 180
+            }
         };
     }
 

@@ -28,7 +28,11 @@ namespace DesktopFences
             catch { return "0.0.0"; }
         }
 
-        private const string GitHubApiUrl = "https://api.github.com/repos/DaveDebugs/Fluid.Fences/releases/latest";
+        private static readonly string[] GitHubApiUrls =
+        [
+            "https://api.github.com/repos/Dave-Debugs/Fluid.Fences/releases/latest",
+            "https://api.github.com/repos/DaveDebugs/Fluid.Fences/releases/latest"
+        ];
 
         [GeneratedRegex("^[A-Fa-f0-9]{64}$", RegexOptions.Compiled)]
         private static partial Regex Sha256HexRegex();
@@ -59,11 +63,31 @@ namespace DesktopFences
             [JsonPropertyName("name")] public string Name { get; set; } = "";
         }
 
+        private static async Task<GitHubRelease?> FetchLatestReleaseAsync()
+        {
+            Exception? lastError = null;
+            foreach (string url in GitHubApiUrls)
+            {
+                try
+                {
+                    var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(url);
+                    if (release is not null && !string.IsNullOrEmpty(release.TagName))
+                        return release;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                }
+            }
+            if (lastError is not null) throw lastError;
+            return null;
+        }
+
         public static async Task CheckAndApplyUpdateAsync(bool silentCheck = true)
         {
             try
             {
-                var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(GitHubApiUrl);
+                var release = await FetchLatestReleaseAsync();
                 if (release == null || string.IsNullOrEmpty(release.TagName)) return;
 
                 string latestTag = release.TagName.TrimStart('v', 'V');
@@ -81,7 +105,7 @@ namespace DesktopFences
 
                         if (exeAsset != null && checksumAsset != null)
                         {
-                            if (!silentCheck || MessageBox.Show($"A secure update to Fluid Fences (v{latestTag}) is available!\n\nWould you like to download and install it now?", "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                            if (MessageBox.Show($"A secure update to Fluid Fences (v{latestTag}) is available!\n\nWould you like to download and install it now?", "Update Available", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                             {
                                 await ApplySecureUpdateAsync(exeAsset.DownloadUrl, checksumAsset.DownloadUrl, exeAsset.Name);
                             }
@@ -132,8 +156,9 @@ namespace DesktopFences
                 string checksumContent = await _httpClient.GetStringAsync(checksumUrl, cts.Token);
                 string expectedHash = "";
                 string targetFile = Path.GetFileName(assetName);
+                var nonEmptyLines = checksumContent.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
 
-                foreach (var line in checksumContent.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                foreach (var line in nonEmptyLines)
                 {
                     string trimmed = line.Trim();
                     if (trimmed.StartsWith("SHA256", StringComparison.OrdinalIgnoreCase) && trimmed.Contains(targetFile, StringComparison.OrdinalIgnoreCase))
@@ -161,7 +186,7 @@ namespace DesktopFences
                             break;
                         }
                     }
-                    else if (parts.Length == 1 && Sha256HexRegex().IsMatch(parts[0]) && string.IsNullOrEmpty(expectedHash))
+                    else if (nonEmptyLines.Length == 1 && parts.Length == 1 && Sha256HexRegex().IsMatch(parts[0]) && string.IsNullOrEmpty(expectedHash))
                     {
                         expectedHash = parts[0].ToUpperInvariant();
                     }

@@ -22,7 +22,7 @@ namespace DesktopFences
         public static async Task<GlobalConfig> ReadAsync()
         {
             await _gate.WaitAsync().ConfigureAwait(false);
-            try { return ReadUnlocked(); }
+            try { return await ReadUnlockedAsync().ConfigureAwait(false); }
             finally { _gate.Release(); }
         }
 
@@ -33,9 +33,9 @@ namespace DesktopFences
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var config = ReadUnlocked();
+                var config = await ReadUnlockedAsync().ConfigureAwait(false);
                 mutate(config);
-                WriteUnlocked(config);
+                await WriteUnlockedAsync(config).ConfigureAwait(false);
             }
             catch (Exception ex) { App.LogError("ConfigStore.UpdateAsync", ex); }
             finally { _gate.Release(); }
@@ -54,6 +54,31 @@ namespace DesktopFences
             }
             catch (Exception ex) { App.LogError("ConfigStore.Update", ex); }
             finally { _gate.Release(); }
+        }
+
+        private static async Task<GlobalConfig> ReadUnlockedAsync()
+        {
+            if (!File.Exists(Path)) return new GlobalConfig();
+
+            try
+            {
+                await using var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, useAsync: true);
+                using var reader = new StreamReader(fs);
+                string json = await reader.ReadToEndAsync().ConfigureAwait(false);
+                return JsonSerializer.Deserialize<GlobalConfig>(json, ReadOptions) ?? new GlobalConfig();
+            }
+            catch (Exception ex)
+            {
+                App.LogError("ConfigStore.ReadUnlockedAsync", ex);
+                try
+                {
+                    string backup = $"{Path}.corrupt_{DateTime.UtcNow:yyyyMMddHHmmss}.bak";
+                    File.Copy(Path, backup, overwrite: true);
+                }
+                catch { }
+
+                return new GlobalConfig();
+            }
         }
 
         private static GlobalConfig ReadUnlocked()
@@ -78,6 +103,25 @@ namespace DesktopFences
                 catch { }
 
                 return new GlobalConfig();
+            }
+        }
+
+        private static async Task WriteUnlockedAsync(GlobalConfig config)
+        {
+            string dir = System.IO.Path.GetDirectoryName(Path)!;
+            Directory.CreateDirectory(dir);
+            string temp = System.IO.Path.Combine(dir, $"{System.IO.Path.GetFileName(Path)}.{Guid.NewGuid():N}.tmp");
+
+            try
+            {
+                string json = JsonSerializer.Serialize(config, WriteOptions);
+                await File.WriteAllTextAsync(temp, json).ConfigureAwait(false);
+                File.Move(temp, Path, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                throw;
             }
         }
 

@@ -256,9 +256,8 @@ namespace DesktopFences
                     uint? monitor = ResolveCurrentMonitorIndex();
                     Rect? region = ResolveCurrentMonitorBounds();
 
-                    result = await System.Threading.Tasks.Task.Run(
-                        () => Core.Theming.ThemeGenerator.GenerateFromDesktop(
-                                  dark, allowScreenCapture: true, monitorIndex: monitor, region: region));
+                    result = await Core.Theming.ThemeGenerator.GenerateFromDesktopAsync(
+                        dark, allowScreenCapture: true, monitorIndex: monitor, region: region);
                 }
                 finally
                 {
@@ -325,7 +324,7 @@ namespace DesktopFences
             menu.Items.Add(apply);
 
             var export = new MenuItem { Header = "Export\u2026" };
-            export.Click += (_, _) => ExportTheme_Click(this, new RoutedEventArgs());
+            export.Click += async (_, _) => await ExportThemeAsync(theme);
             menu.Items.Add(export);
 
             menu.Items.Add(new Separator());
@@ -423,6 +422,18 @@ namespace DesktopFences
             e.Handled = true;
         }
 
+        private void ThemeGallery_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (e.Handled || PageScroller is null) return;
+            e.Handled = true;
+            var forwarded = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+            {
+                RoutedEvent = UIElement.MouseWheelEvent,
+                Source = sender
+            };
+            PageScroller.RaiseEvent(forwarded);
+        }
+
         private void ThemeGallery_ContextMenuKey(object sender, KeyEventArgs e)
         {
             bool menuKey = e.Key == Key.Apps ||
@@ -456,27 +467,41 @@ namespace DesktopFences
 
         private async void ImportTheme_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            try
             {
-                Title = "Import theme",
-                Filter = "Fluid Fences themes (*.fftheme;*.json)|*.fftheme;*.json|All files (*.*)|*.*"
-            };
-            if (dlg.ShowDialog() != true) return;
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "Import theme",
+                    Filter = "Fluid Fences themes (*.fftheme;*.json)|*.fftheme;*.json|All files (*.*)|*.*"
+                };
+                if (dlg.ShowDialog() != true) return;
 
-            var imported = await Core.Theming.ThemeCatalog.ImportAsync(dlg.FileName);
-            if (imported is null)
-            {
-                ShowStatus("That file could not be read as a theme.", StatusKind.Error);
-                return;
+                var imported = await Core.Theming.ThemeCatalog.ImportAsync(dlg.FileName);
+                if (imported is null)
+                {
+                    ShowStatus("That file could not be read as a theme.", StatusKind.Error);
+                    return;
+                }
+
+                LoadThemeCatalog(ThemeFilter.Text);
+                RefreshStats();
+                ShowStatus($"Imported '{imported.Name}'.", StatusKind.Success);
             }
-
-            LoadThemeCatalog(ThemeFilter.Text);
-            ShowStatus($"Imported '{imported.Name}'.", StatusKind.Success);
+            catch (Exception ex)
+            {
+                LogError("ImportTheme", ex);
+                ShowStatus("Theme import failed. See app_error.log for details.", StatusKind.Error);
+            }
         }
 
         private async void ExportTheme_Click(object sender, RoutedEventArgs e)
         {
             var theme = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId);
+            await ExportThemeAsync(theme);
+        }
+
+        private async System.Threading.Tasks.Task ExportThemeAsync(Core.Theming.ThemeDefinition theme)
+        {
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
                 Title = "Export theme",
@@ -500,12 +525,7 @@ namespace DesktopFences
 
         private static void LogError(string context, Exception ex)
         {
-            try
-            {
-                string logPath = Path.Combine(App.ConfigFolder, "error.log");
-                File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Settings_{context}: {ex.Message}\n");
-            }
-            catch { }
+            App.LogError($"Settings_{context}", ex);
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -514,6 +534,17 @@ namespace DesktopFences
 
             _statusTimer.Stop();
             _liveUpdateTimer.Stop();
+
+            try
+            {
+                if (HomeLogoAnim is not null)
+                {
+                    HomeLogoAnim.Stop();
+                    HomeLogoAnim.Close();
+                    HomeLogoAnim.Source = null;
+                }
+            }
+            catch { }
 
             Core.Theming.ThemeEngine.ThemeApplied -= OnThemeApplied;
 
@@ -553,35 +584,30 @@ namespace DesktopFences
 
         private async System.Threading.Tasks.Task LoadGlobalSettingsAsync()
         {
-            string globalConfigPath = Path.Combine(App.ConfigFolder, "global_config.json");
-            if (File.Exists(globalConfigPath))
+            try
             {
-                try
+                var config = await ConfigStore.ReadAsync();
+                if (config is not null)
                 {
-                    string json = await File.ReadAllTextAsync(globalConfigPath);
-                    if (JsonSerializer.Deserialize<GlobalConfig>(json) is GlobalConfig config)
+                    TaskbarToggle.IsChecked = config.ShowTaskbarIcon;
+                    RestoreFilesToggle.IsChecked = config.RestoreFilesOnDelete;
+                    GhostModeToggle.IsChecked = config.EnableGhostMode;
+                    PauseMediaToggle.IsChecked = config.PauseMediaOnRollup;
+
+                    if (config.Theme != null)
                     {
+                        MediaFilePathInput.Text = config.Theme.BackgroundMediaPath;
+                        MediaOpacitySlider.Value = config.Theme.MediaOpacity * 100.0;
+                        AnimationDropdown.SelectedIndex = (int)config.Theme.RollUpAnimation;
 
-                        TaskbarToggle.IsChecked = config.ShowTaskbarIcon;
-                        RestoreFilesToggle.IsChecked = config.RestoreFilesOnDelete;
-                        GhostModeToggle.IsChecked = config.EnableGhostMode;
-                        PauseMediaToggle.IsChecked = config.PauseMediaOnRollup;
+                        var active = Core.Theming.ThemeCatalog.Get(
+                            !string.IsNullOrWhiteSpace(config.ThemeId) ? config.ThemeId : config.Theme.ThemeName);
 
-                        if (config.Theme != null)
-                        {
-                            MediaFilePathInput.Text = config.Theme.BackgroundMediaPath;
-                            MediaOpacitySlider.Value = config.Theme.MediaOpacity * 100.0;
-                            AnimationDropdown.SelectedIndex = (int)config.Theme.RollUpAnimation;
-
-                            var active = Core.Theming.ThemeCatalog.Get(
-                                !string.IsNullOrWhiteSpace(config.ThemeId) ? config.ThemeId : config.Theme.ThemeName);
-
-                            _ = active;
-                        }
+                        _ = active;
                     }
                 }
-                catch (Exception ex) { LogError("LoadConfig", ex); }
             }
+            catch (Exception ex) { LogError("LoadConfig", ex); }
 
             try
             {
@@ -595,83 +621,114 @@ namespace DesktopFences
 
         private async void SaveGlobalSettings_Click(object sender, RoutedEventArgs e)
         {
-            string globalConfigPath = Path.Combine(App.ConfigFolder, "global_config.json");
-            bool showTaskbar = TaskbarToggle.IsChecked ?? true;
-            bool restoreFiles = RestoreFilesToggle.IsChecked ?? true;
-            bool ghostMode = GhostModeToggle.IsChecked ?? false;
-            bool pauseMedia = PauseMediaToggle.IsChecked ?? true;
+            await SaveGlobalSettingsCoreAsync(showSavedStatus: false);
+        }
 
-            Core.ThemeSettings newTheme = new()
-            {
-                ThemeName = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId).Name,
-                RollUpAnimation = (Core.AnimationStyle)AnimationDropdown.SelectedIndex,
-                BackgroundMediaPath = MediaFilePathInput.Text,
-                MediaOpacity = MediaOpacitySlider.Value / 100.0
-            };
-
-            var selectedTheme = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId);
-
-            newTheme.ThemeName = selectedTheme.Name;
-            newTheme.BackgroundColor    = selectedTheme.Colors.Background    ?? newTheme.BackgroundColor;
-            newTheme.HeaderColor        = selectedTheme.Colors.Header        ?? newTheme.HeaderColor;
-            newTheme.FontColor          = selectedTheme.Colors.TextPrimary   ?? newTheme.FontColor;
-            newTheme.SecondaryFontColor = selectedTheme.Colors.TextSecondary ?? newTheme.SecondaryFontColor;
-            newTheme.AccentColor        = selectedTheme.Colors.Accent        ?? newTheme.AccentColor;
-
-            await ConfigStore.UpdateAsync(c =>
-            {
-                c.FirstRunComplete     = true;
-                c.ShowTaskbarIcon      = showTaskbar;
-                c.RestoreFilesOnDelete = restoreFiles;
-                c.EnableGhostMode      = ghostMode;
-                c.PauseMediaOnRollup   = pauseMedia;
-                c.ThemeId              = selectedTheme.Id;
-                c.Theme                = newTheme;
-            });
-            App.PauseMediaOnRollup = pauseMedia;
-
-            foreach (Window window in Application.Current.Windows)
-            {
-                if (window is MainWindow fence)
-                {
-                    fence.ShowInTaskbar = showTaskbar;
-                    fence.UpdateGlobalGhostMode(ghostMode);
-
-                    fence.ApplyTheme(newTheme);
-                }
-            }
-
+        private async System.Threading.Tasks.Task SaveGlobalSettingsCoreAsync(bool showSavedStatus)
+        {
             try
             {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                bool showTaskbar = TaskbarToggle.IsChecked ?? true;
+                bool restoreFiles = RestoreFilesToggle.IsChecked ?? true;
+                bool ghostMode = GhostModeToggle.IsChecked ?? false;
+                bool pauseMedia = PauseMediaToggle.IsChecked ?? true;
 
-                if (StartupToggle.IsChecked == true)
+                var selectedTheme = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId);
+
+                Core.ThemeSettings newTheme = new()
                 {
-                    string exePath = Environment.ProcessPath!;
-                    key?.SetValue("FluidFences", $"\"{exePath}\"");
-                }
-                else
+                    ThemeName = selectedTheme.Name,
+                    RollUpAnimation = (Core.AnimationStyle)AnimationDropdown.SelectedIndex,
+                    BackgroundMediaPath = MediaFilePathInput.Text,
+                    MediaOpacity = MediaOpacitySlider.Value / 100.0
+                };
+
+                newTheme.BackgroundColor    = selectedTheme.Colors.Background    ?? newTheme.BackgroundColor;
+                newTheme.HeaderColor        = selectedTheme.Colors.Header        ?? newTheme.HeaderColor;
+                newTheme.FontColor          = selectedTheme.Colors.TextPrimary   ?? newTheme.FontColor;
+                newTheme.SecondaryFontColor = selectedTheme.Colors.TextSecondary ?? newTheme.SecondaryFontColor;
+                newTheme.AccentColor        = selectedTheme.Colors.Accent        ?? newTheme.AccentColor;
+
+                await ConfigStore.UpdateAsync(c =>
                 {
-                    key?.DeleteValue("FluidFences", false);
+                    c.FirstRunComplete     = true;
+                    c.ShowTaskbarIcon      = showTaskbar;
+                    c.RestoreFilesOnDelete = restoreFiles;
+                    c.EnableGhostMode      = ghostMode;
+                    c.PauseMediaOnRollup   = pauseMedia;
+                    c.ThemeId              = selectedTheme.Id;
+                    c.Theme                = newTheme;
+                });
+                App.PauseMediaOnRollup = pauseMedia;
+
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is MainWindow fence)
+                    {
+                        fence.ShowInTaskbar = showTaskbar;
+                        fence.UpdateGlobalGhostMode(ghostMode);
+
+                        fence.ApplyTheme(newTheme);
+                    }
                 }
+
+                try
+                {
+                    using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+
+                    if (StartupToggle.IsChecked == true)
+                    {
+                        string exePath = Environment.ProcessPath!;
+                        key?.SetValue("FluidFences", $"\"{exePath}\"");
+                    }
+                    else
+                    {
+                        key?.DeleteValue("FluidFences", false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogError("WriteRegistry", ex);
+                    ShowStatus("Could not change the Windows startup setting.", StatusKind.Warning);
+                    return;
+                }
+
+                if (showSavedStatus)
+                    ShowStatus("Saved.", StatusKind.Success);
             }
             catch (Exception ex)
             {
-                LogError("WriteRegistry", ex);
-                ShowStatus("Could not change the Windows startup setting.", StatusKind.Warning);
+                LogError("SaveGlobalSettings", ex);
+                ShowStatus("Could not save settings.", StatusKind.Error);
             }
-
         }
 
         private async void SaveLayout_Click(object sender, RoutedEventArgs e)
         {
-            await App.SaveCurrentLayoutAsync();
-            ShowStatus("Layout snapshot saved.", StatusKind.Success);
+            try
+            {
+                await App.SaveCurrentLayoutAsync();
+                ShowStatus("Layout snapshot saved.", StatusKind.Success);
+            }
+            catch (Exception ex)
+            {
+                LogError("SaveLayout", ex);
+                ShowStatus("Could not save layout snapshot.", StatusKind.Error);
+            }
         }
+
         private async void RestoreLayout_Click(object sender, RoutedEventArgs e)
         {
-            await App.RestoreLayoutSnapshotAsync();
-            ShowStatus("Fences returned to the saved layout.", StatusKind.Success);
+            try
+            {
+                await App.RestoreLayoutSnapshotAsync();
+                ShowStatus("Fences returned to the saved layout.", StatusKind.Success);
+            }
+            catch (Exception ex)
+            {
+                LogError("RestoreLayout", ex);
+                ShowStatus("Could not restore layout snapshot.", StatusKind.Error);
+            }
         }
 
         private void LoadAllFences()
@@ -746,7 +803,7 @@ namespace DesktopFences
                 : FenceColorSource.Theme;
 
             HueSlider.IsEnabled = !isAuto; SaturationSlider.IsEnabled = !isAuto; LightnessSlider.IsEnabled = !isAuto;
-            double opacity = isAuto ? 0.4 : 1.0; HueSlider.Opacity = opacity; SaturationSlider.Opacity = opacity;
+            double opacity = isAuto ? 0.4 : 1.0; HueSlider.Opacity = opacity; SaturationSlider.Opacity = opacity; LightnessSlider.Opacity = opacity;
 
             UpdateColorSlidersFromFence(_currentlySelectedFence);
             UpdateColorSourceCard();
@@ -762,7 +819,7 @@ namespace DesktopFences
             _isColorInitializing = true;
             AutoMatchToggle.IsChecked = false;
             HueSlider.IsEnabled = SaturationSlider.IsEnabled = LightnessSlider.IsEnabled = true;
-            HueSlider.Opacity = SaturationSlider.Opacity = 1.0;
+            HueSlider.Opacity = SaturationSlider.Opacity = LightnessSlider.Opacity = 1.0;
             _isColorInitializing = false;
 
             UpdateColorSlidersFromFence(_currentlySelectedFence);
@@ -813,7 +870,9 @@ namespace DesktopFences
         {
             double h = HueSlider.Value; double s = SaturationSlider.Value / 100.0; double l = LightnessSlider.Value / 100.0; double a = AlphaSlider.Value / 100.0;
             Color rgbColor = HslToRgb(h, s, l); Color finalColor = Color.FromArgb((byte)(a * 255), rgbColor.R, rgbColor.G, rgbColor.B);
-            ColorPreview.Background = new SolidColorBrush(finalColor) { Opacity = a };
+            var previewBrush = new SolidColorBrush(finalColor);
+            previewBrush.Freeze();
+            ColorPreview.Background = previewBrush;
 
             Color pureHue = HslToRgb(h, 1.0, 0.5);
             BrightnessEndColor.Color = pureHue;
@@ -903,7 +962,20 @@ namespace DesktopFences
 
         private void BuyMeACoffee_Click(object sender, RoutedEventArgs e)
         {
-            Process.Start(new ProcessStartInfo("https://buymeacoffee.com/davedebugs") { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://buymeacoffee.com/davedebugs") { UseShellExecute = true });
+            }
+            catch (Exception ex) { LogError("BuyMeACoffee_Click", ex); }
+        }
+
+        private void OpenGitHub_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://github.com/Dave-Debugs") { UseShellExecute = true });
+            }
+            catch (Exception ex) { LogError("OpenGitHub_Click", ex); }
         }
 
         private static void ApplyMediaToOpenFences(Core.Theming.ThemeDefinition theme, string? mediaPath, double opacity)
@@ -933,16 +1005,27 @@ namespace DesktopFences
             try
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string loops   = System.IO.Path.Combine(baseDir, "Assets", "Loops");
-                if (!System.IO.Directory.Exists(loops)) return null;
+                string loopsDir = System.IO.Path.Combine(baseDir, "Assets", "Loops");
+
+                if (!string.IsNullOrWhiteSpace(theme.LoopFile))
+                {
+                    string safeLoopFile = System.IO.Path.GetFileName(theme.LoopFile);
+                    string userMediaPath = System.IO.Path.Combine(Core.Theming.ThemeCatalog.UserThemeFolder, "media", safeLoopFile);
+                    if (System.IO.File.Exists(userMediaPath)) return userMediaPath;
+
+                    string builtinLoopPath = System.IO.Path.Combine(loopsDir, safeLoopFile);
+                    if (System.IO.File.Exists(builtinLoopPath)) return builtinLoopPath;
+                }
+
+                if (!System.IO.Directory.Exists(loopsDir)) return null;
 
                 foreach (string candidate in new[] { theme.Id, theme.Id.Replace('-', '_') })
                 {
-                    string path = System.IO.Path.Combine(loops, candidate + ".mp4");
+                    string path = System.IO.Path.Combine(loopsDir, candidate + ".mp4");
                     if (System.IO.File.Exists(path)) return path;
                 }
 
-                return BorrowNearestLoop(theme, loops);
+                return BorrowNearestLoop(theme, loopsDir);
             }
             catch (Exception ex) { LogError("ResolveThemeLoop", ex); return null; }
         }
@@ -1026,8 +1109,6 @@ namespace DesktopFences
         {
             try
             {
-                if (System.Windows.Forms.Screen.AllScreens.Length <= 1) return null;
-
                 var helper = new System.Windows.Interop.WindowInteropHelper(this);
                 var b = System.Windows.Forms.Screen.FromHandle(helper.Handle).Bounds;
                 return new Rect(b.X, b.Y, b.Width, b.Height);
@@ -1042,12 +1123,22 @@ namespace DesktopFences
             if (dlg.ShowDialog() == true)
             {
                 MediaFilePathInput.Text = dlg.FileName;
+                ApplyMediaToOpenFences(
+                    Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
+                    string.IsNullOrWhiteSpace(MediaFilePathInput.Text) ? null : MediaFilePathInput.Text,
+                    MediaOpacitySlider.Value / 100.0);
+                AutoSaveGlobal();
             }
         }
 
         private void ClearMedia_Click(object sender, RoutedEventArgs e)
         {
             MediaFilePathInput.Text = string.Empty;
+            ApplyMediaToOpenFences(
+                Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
+                null,
+                MediaOpacitySlider.Value / 100.0);
+            AutoSaveGlobal();
         }
 
         private void AskAQuestion_Click(object sender, RoutedEventArgs e) { try { Process.Start(new ProcessStartInfo("mailto:davedebugs@outlook.com?subject=Fluid Fences - Question") { UseShellExecute = true }); } catch { } }
@@ -1076,14 +1167,21 @@ namespace DesktopFences
             TitleInput.LostFocus     += (_, _) => AutoSaveFence();
             AutoSortInput.LostFocus  += (_, _) => AutoSaveFence();
 
-            MediaOpacitySlider.ValueChanged += (_, _) => AutoSaveFence();
+            MediaOpacitySlider.ValueChanged += (_, _) =>
+            {
+                if (!_autoSaveArmed || _isLoadingFenceData) return;
+                ApplyMediaToOpenFences(
+                    Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
+                    string.IsNullOrWhiteSpace(MediaFilePathInput.Text) ? null : MediaFilePathInput.Text,
+                    MediaOpacitySlider.Value / 100.0);
+                AutoSaveGlobal();
+            };
         }
 
-        private void AutoSaveGlobal()
+        private async void AutoSaveGlobal()
         {
             if (!_autoSaveArmed || _isLoadingFenceData) return;
-            SaveGlobalSettings_Click(this, new RoutedEventArgs());
-            ShowStatus("Saved.", StatusKind.Success);
+            await SaveGlobalSettingsCoreAsync(showSavedStatus: true);
         }
 
         private void AutoSaveFence()
@@ -1139,6 +1237,7 @@ namespace DesktopFences
                     Tag = entry.Tag
                 };
                 System.Windows.Automation.AutomationProperties.SetName(button, entry.Label);
+                System.Windows.Automation.AutomationProperties.SetAutomationId(button, $"Nav_{entry.Tag}");
 
                 string tag = entry.Tag;
 
@@ -1200,6 +1299,16 @@ namespace DesktopFences
             foreach (var kv in pages)
                 if (kv.Value is not null)
                     kv.Value.Visibility = kv.Key == tag ? Visibility.Visible : Visibility.Collapsed;
+
+            try
+            {
+                if (HomeLogoAnim?.Source is not null)
+                {
+                    if (tag == "AboutGrid") HomeLogoAnim.Play();
+                    else HomeLogoAnim.Pause();
+                }
+            }
+            catch { }
 
             _suppressNavChecked = true;
             try { foreach (var kv in _navItems) kv.Value.IsChecked = kv.Key == tag; }

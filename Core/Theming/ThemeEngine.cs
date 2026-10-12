@@ -16,7 +16,6 @@ namespace DesktopFences.Core.Theming
 
         public static event EventHandler<ThemeDefinition>? ThemeApplied;
 
-        private static ThemeDefinition? _prePreviewTheme;
         private static DispatcherTimer? _transitionTimer;
 
         private static readonly (Func<ThemeColors, string?> Get, string[] Keys)[] ColorMap =
@@ -88,47 +87,6 @@ namespace DesktopFences.Core.Theming
             }
         }
 
-        public static void Preview(ThemeDefinition theme)
-        {
-            if (theme is null) return;
-            if (Application.Current is null) return;
-
-            if (!Application.Current.Dispatcher.CheckAccess())
-            {
-                Application.Current.Dispatcher.Invoke(() => Preview(theme));
-                return;
-            }
-
-            _prePreviewTheme ??= Current;
-            StopTransition();
-            WriteTokens(theme);
-        }
-
-        public static void CancelPreview()
-        {
-            if (_prePreviewTheme is null) return;
-            if (Application.Current is null) return;
-
-            if (!Application.Current.Dispatcher.CheckAccess())
-            {
-                Application.Current.Dispatcher.Invoke(CancelPreview);
-                return;
-            }
-
-            StopTransition();
-            WriteTokens(_prePreviewTheme);
-            Commit(_prePreviewTheme);
-            _prePreviewTheme = null;
-        }
-
-        public static void CommitPreview(ThemeDefinition theme)
-        {
-            _prePreviewTheme = null;
-            Commit(theme);
-        }
-
-        public static void ForgetPreview() => _prePreviewTheme = null;
-
         public static bool IsReducedMotion()
         {
             try
@@ -166,7 +124,7 @@ namespace DesktopFences.Core.Theming
 
             foreach (var (get, keys) in ColorMap)
             {
-                string? raw = get(theme.Colors);
+                string? raw = get(theme.Colors) ?? get(fallback.Colors);
 
                 if (string.IsNullOrWhiteSpace(raw)) continue;
 
@@ -175,48 +133,77 @@ namespace DesktopFences.Core.Theming
                 foreach (string key in keys) SetColorAndBrush(res, key, color);
             }
 
-            if (theme.Shape.CornerRadius is double r)
-                res["CustomCornerRadius"] = new CornerRadius(Clamp(r, 0, 32));
-            if (theme.Shape.CornerRadiusSmall is double rs)
-                res["CustomCornerRadiusSmall"] = new CornerRadius(Clamp(rs, 0, 32));
-            if (theme.Shape.BorderThickness is double bt)
-                res["CustomBorderThickness"] = Clamp(bt, 0, 8);
-            if (theme.Shape.ShadowOpacity is double so)
-                res["CustomShadowOpacity"] = Clamp(so, 0, 1);
-            if (theme.Shape.ShadowBlurRadius is double sb)
-                res["CustomShadowBlurRadius"] = Clamp(sb, 0, 64);
-            if (theme.Shape.ShadowDepth is double sd)
-                res["CustomShadowDepth"] = Clamp(sd, 0, 32);
+            double r = theme.Shape.CornerRadius ?? fallback.Shape.CornerRadius ?? 8.0;
+            res["CustomCornerRadius"] = new CornerRadius(Clamp(r, 0, 32));
 
-            if (!string.IsNullOrWhiteSpace(theme.Typography.FontFamily))
-            {
-                try { res["CustomFontFamily"] = new FontFamily(theme.Typography.FontFamily); }
-                catch {  }
-            }
-            if (!string.IsNullOrWhiteSpace(theme.Typography.MonospaceFontFamily))
-            {
-                try { res["CustomMonospaceFontFamily"] = new FontFamily(theme.Typography.MonospaceFontFamily); }
-                catch { }
-            }
-            if (theme.Typography.Scale is double fs)
-            {
+            double rs = theme.Shape.CornerRadiusSmall ?? fallback.Shape.CornerRadiusSmall ?? 4.0;
+            res["CustomCornerRadiusSmall"] = new CornerRadius(Clamp(rs, 0, 32));
 
-                res["CustomFontScale"] = Clamp(fs, 0.8, 1.5);
-            }
+            double bt = theme.Shape.BorderThickness ?? fallback.Shape.BorderThickness ?? 1.0;
+            res["CustomBorderThickness"] = Clamp(bt, 0, 8);
 
-            if (theme.Motion.SpeedMultiplier is double ms)
-                res["CustomMotionScale"] = Clamp(ms, 0, 3);
-            if (theme.Motion.ThemeTransitionMs is int tms)
-                res["CustomThemeTransitionMs"] = Math.Max(0, tms);
+            double so = theme.Shape.ShadowOpacity ?? fallback.Shape.ShadowOpacity ?? 0.35;
+            res["CustomShadowOpacity"] = Clamp(so, 0, 1);
+
+            double sb = theme.Shape.ShadowBlurRadius ?? fallback.Shape.ShadowBlurRadius ?? 16.0;
+            res["CustomShadowBlurRadius"] = Clamp(sb, 0, 64);
+
+            double sd = theme.Shape.ShadowDepth ?? fallback.Shape.ShadowDepth ?? 2.0;
+            res["CustomShadowDepth"] = Clamp(sd, 0, 32);
+
+            string fontFamily = !string.IsNullOrWhiteSpace(theme.Typography.FontFamily)
+                ? theme.Typography.FontFamily!
+                : (fallback.Typography.FontFamily ?? "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial");
+            try { res["CustomFontFamily"] = new FontFamily(fontFamily); }
+            catch { }
+
+            string monoFontFamily = !string.IsNullOrWhiteSpace(theme.Typography.MonospaceFontFamily)
+                ? theme.Typography.MonospaceFontFamily!
+                : (fallback.Typography.MonospaceFontFamily ?? "Cascadia Mono, Consolas, Courier New");
+            try { res["CustomMonospaceFontFamily"] = new FontFamily(monoFontFamily); }
+            catch { }
+
+            double fs = theme.Typography.Scale ?? fallback.Typography.Scale ?? 1.0;
+            res["CustomFontScale"] = Clamp(fs, 0.8, 1.5);
+
+            res["TitleFontWeight"] = ParseFontWeight(theme.Typography.TitleWeight ?? fallback.Typography.TitleWeight);
+
+            double ms = theme.Motion.SpeedMultiplier ?? fallback.Motion.SpeedMultiplier ?? 1.0;
+            res["CustomMotionScale"] = Clamp(ms, 0, 3);
+
+            int tms = theme.Motion.ThemeTransitionMs ?? fallback.Motion.ThemeTransitionMs ?? 180;
+            res["CustomThemeTransitionMs"] = Math.Max(0, tms);
+
+            res["RollUpStyle"] = theme.Motion.RollUpStyle ?? fallback.Motion.RollUpStyle ?? "Glass";
 
             foreach (var kv in theme.CustomTokens)
             {
                 if (string.IsNullOrWhiteSpace(kv.Key)) continue;
+                if (!kv.Key.StartsWith("CustomToken.", StringComparison.Ordinal)) continue;
+                if (res.Contains(kv.Key) && res[kv.Key] is not (string or Color)) continue;
                 if (TryParseColor(kv.Value, out Color c)) res[kv.Key] = c;
                 else res[kv.Key] = kv.Value;
             }
 
             ApplyBaseTheme(theme);
+        }
+
+        private static FontWeight ParseFontWeight(string? weight)
+        {
+            if (string.IsNullOrWhiteSpace(weight)) return FontWeights.SemiBold;
+            return weight.Trim().ToLowerInvariant() switch
+            {
+                "thin" => FontWeights.Thin,
+                "extralight" or "ultralight" => FontWeights.ExtraLight,
+                "light" => FontWeights.Light,
+                "normal" or "regular" => FontWeights.Normal,
+                "medium" => FontWeights.Medium,
+                "semibold" or "demibold" => FontWeights.SemiBold,
+                "bold" => FontWeights.Bold,
+                "extrabold" or "ultrabold" => FontWeights.ExtraBold,
+                "black" or "heavy" => FontWeights.Black,
+                _ => FontWeights.SemiBold
+            };
         }
 
         private static void ApplyBaseTheme(ThemeDefinition theme)
@@ -233,7 +220,8 @@ namespace DesktopFences.Core.Theming
                     Wpf.Ui.Appearance.ApplicationThemeManager.Apply(target, updateAccent: false);
                 }
 
-                if (TryParseColor(theme.Colors.Accent, out Color accent))
+                string? accentRaw = theme.Colors.Accent ?? ThemeDefinition.Fallback.Colors.Accent;
+                if (TryParseColor(accentRaw, out Color accent))
                 {
                     Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(accent, target);
                 }
@@ -253,12 +241,13 @@ namespace DesktopFences.Core.Theming
         private static void AnimateTo(ThemeDefinition target)
         {
             var res = Application.Current.Resources;
+            var fallback = ThemeDefinition.Fallback;
             int durationMs = GetTransitionMs(target);
 
             var lerps = new List<(string Key, Color From, Color To)>();
             foreach (var (get, keys) in ColorMap)
             {
-                string? raw = get(target.Colors);
+                string? raw = get(target.Colors) ?? get(fallback.Colors);
                 if (string.IsNullOrWhiteSpace(raw)) continue;
                 if (!TryParseColor(raw, out Color to)) continue;
 
@@ -311,7 +300,7 @@ namespace DesktopFences.Core.Theming
         }
 
         private static int GetTransitionMs(ThemeDefinition theme)
-            => theme.Motion?.ThemeTransitionMs ?? 180;
+            => theme.Motion?.ThemeTransitionMs ?? ThemeDefinition.Fallback.Motion.ThemeTransitionMs ?? 180;
 
         public static bool TryParseColor(string? raw, out Color color)
         {
@@ -337,23 +326,9 @@ namespace DesktopFences.Core.Theming
         private static double Clamp(double v, double min, double max)
             => v < min ? min : v > max ? max : v;
 
-        public static double RelativeLuminance(Color c)
-        {
-            static double Channel(byte v)
-            {
-                double s = v / 255.0;
-                return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
-            }
-            return 0.2126 * Channel(c.R) + 0.7152 * Channel(c.G) + 0.0722 * Channel(c.B);
-        }
+        public static double RelativeLuminance(Color c) => ColorSpace.RelativeLuminance(c);
 
-        public static double ContrastRatio(Color foreground, Color background)
-        {
-            double l1 = RelativeLuminance(foreground);
-            double l2 = RelativeLuminance(background);
-            if (l1 < l2) (l1, l2) = (l2, l1);
-            return (l1 + 0.05) / (l2 + 0.05);
-        }
+        public static double ContrastRatio(Color foreground, Color background) => ColorSpace.Contrast(foreground, background);
 
         public static IReadOnlyList<string> AuditContrast(ThemeDefinition theme)
         {

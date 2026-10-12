@@ -11,31 +11,19 @@ namespace DesktopFences
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            string? hex = value as string;
-            if (string.IsNullOrWhiteSpace(hex)) return Brushes.Transparent;
-
-            try
-            {
-                var color = (Color)ColorConverter.ConvertFromString(hex);
-
-                if (color.A < 255 && parameter is string backdropHex && !string.IsNullOrWhiteSpace(backdropHex))
-                {
-                    var backdrop = (Color)ColorConverter.ConvertFromString(backdropHex);
-                    double a = color.A / 255.0;
-                    color = Color.FromRgb(
-                        (byte)(color.R * a + backdrop.R * (1 - a)),
-                        (byte)(color.G * a + backdrop.G * (1 - a)),
-                        (byte)(color.B * a + backdrop.B * (1 - a)));
-                }
-
-                var brush = new SolidColorBrush(color);
-                brush.Freeze();
-                return brush;
-            }
-            catch
-            {
+            if (!Core.Theming.ThemeEngine.TryParseColor(value as string, out Color color))
                 return Brushes.Transparent;
+
+            if (color.A < 255 &&
+                parameter is string backdropHex &&
+                Core.Theming.ThemeEngine.TryParseColor(backdropHex, out Color backdrop))
+            {
+                color = Core.Theming.ColorSpace.CompositeOver(color, backdrop);
             }
+
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

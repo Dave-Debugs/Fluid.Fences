@@ -25,6 +25,7 @@ namespace DesktopFences.Core.Theming
 
             var centroids = InitialiseCentroids(points, clusters);
             var assignment = new int[points.Count];
+            var sums = new (double L, double a, double b, int n)[clusters];
 
             for (int iteration = 0; iteration < maxIterations; iteration++)
             {
@@ -44,7 +45,7 @@ namespace DesktopFences.Core.Theming
 
                 if (!moved && iteration > 0) break;
 
-                var sums = new (double L, double a, double b, int n)[clusters];
+                Array.Clear(sums);
                 for (int i = 0; i < points.Count; i++)
                 {
                     int c = assignment[i];

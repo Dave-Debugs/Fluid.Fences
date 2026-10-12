@@ -18,29 +18,32 @@
 
 		<NoWarn>$(NoWarn);WFAC010</NoWarn>
 
-		<BaseOutputPath Condition="'$(GITHUB_ACTIONS)' != 'true' and Exists('P:\Programming Repositories\Compiled\Nuget')">P:\Programming Repositories\Compiled\Nuget</BaseOutputPath>
-		<BaseOutputPath Condition="'$(GITHUB_ACTIONS)' == 'true' or !Exists('P:\Programming Repositories\Compiled\Nuget')">bin\</BaseOutputPath>
+		<BaseOutputPath>bin\</BaseOutputPath>
 		<Title>Fluid.Fences</Title>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
 		<AssemblyTitle>FluidFences</AssemblyTitle>
 		<StartupObject>DesktopFences.App</StartupObject>
 		<Copyright>2026</Copyright>
-		<PackageProjectUrl>https://github.com/DaveDebugs</PackageProjectUrl>
+		<PackageProjectUrl>https://github.com/Dave-Debugs/Fluid.Fences</PackageProjectUrl>
 		<PackageIcon>Assets\FF 256.png</PackageIcon>
-		<Description>An opensource desktop organization application.</Description>
-		<RepositoryUrl>https://github.com/DaveDebugs/Fluid.Fences</RepositoryUrl>
+		<Description>Fluid Fences is a fast, modern, opensource desktop organization application and Stardock Fences alternative (fencesclone) for Windows 10 and 11. Organize desktop icons, files, and folders into translucent glass desktop fences with tabs, folder portals, auto-organize, and animated themes.</Description>
+		<RepositoryUrl>https://github.com/Dave-Debugs/Fluid.Fences</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>fences;desktop;management;organization;icon;hideicons;stardock;clone</PackageTags>
+		<PackageTags>Desktop organization;desktop;stardock;fencesclone;fences;desktop fences;opensource;fencesalternative;fluid-fences;windows;wpf;icons;hideicons;productivity;organizer</PackageTags>
 		<AnalysisLevel>latest-recommended</AnalysisLevel>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<Company>DaveDebugs</Company>
-		<RootNamespace>Fluid.Fences</RootNamespace>
+		<Company>Dave-Debugs</Company>
+		<RootNamespace>DesktopFences</RootNamespace>
 		<PackageId>FluidFences</PackageId>
-		<Authors>DaveDebugs</Authors>
+		<Authors>Dave-Debugs</Authors>
 		<Product>FluidFences</Product>
-		<Version>2.2.0</Version>
+		<Version>2.3.5</Version>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="DesktopFences.Tests" />
+	</ItemGroup>
 
 	<ItemGroup>
 
@@ -84,7 +87,6 @@
 		</Resource>
 		<Resource Include="Assets\FF 48.ico" />
 		<Resource Include="Assets\FF32.ico" />
-		<Resource Include="Settings Window\BuyMeACoffeeQR.png" />
 		<Resource Include="Settings Window\FluidFences16BitLogo.png" />
 	</ItemGroup>
 

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "synth-matrix",
   "name": "Synth Matrix",
-  "author": "DaveDebugs",
+  "author": "Dave-Debugs",
   "category": "Terminal",
   "baseTheme": "Dark",
   "pattern": "MATRIX_SCANLINE",

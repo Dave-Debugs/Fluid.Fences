@@ -22,11 +22,22 @@ namespace DesktopFences.Core.Theming
             try
             {
                 if (!string.IsNullOrWhiteSpace(config?.ThemeId))
-                    return config!.ThemeId!;
+                {
+                    if (string.Equals(config!.ThemeId, "fluid-glass", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(config.ThemeId, "Fluid Glass (Default)", StringComparison.OrdinalIgnoreCase))
+                        return ThemeCatalog.Default.Id;
+                    return config.ThemeId!;
+                }
 
                 var legacy = config?.Theme;
                 if (legacy is null || string.IsNullOrWhiteSpace(legacy.ThemeName))
                     return ThemeCatalog.Default.Id;
+
+                if (IsDefaultFluidGlass(legacy))
+                {
+                    ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' maps cleanly to default '{ThemeCatalog.Default.Id}'.");
+                    return ThemeCatalog.Default.Id;
+                }
 
                 var match = ThemeCatalog.Get(legacy.ThemeName);
 
@@ -56,11 +67,22 @@ namespace DesktopFences.Core.Theming
             {
 
                 if (!string.IsNullOrWhiteSpace(config?.ThemeId))
-                    return config!.ThemeId!;
+                {
+                    if (string.Equals(config!.ThemeId, "fluid-glass", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(config.ThemeId, "Fluid Glass (Default)", StringComparison.OrdinalIgnoreCase))
+                        return ThemeCatalog.Default.Id;
+                    return config.ThemeId!;
+                }
 
                 var legacy = config?.Theme;
                 if (legacy is null || string.IsNullOrWhiteSpace(legacy.ThemeName))
                     return ThemeCatalog.Default.Id;
+
+                if (IsDefaultFluidGlass(legacy))
+                {
+                    ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' -> default '{ThemeCatalog.Default.Id}'.");
+                    return ThemeCatalog.Default.Id;
+                }
 
                 var match = ThemeCatalog.Get(legacy.ThemeName);
 
@@ -82,6 +104,39 @@ namespace DesktopFences.Core.Theming
                 ThemeLog.Error("Migrate", ex);
                 return ThemeCatalog.Default.Id;
             }
+        }
+
+        private static bool IsDefaultFluidGlass(ThemeSettings legacy)
+        {
+            string legacyName = legacy.ThemeName?.Trim() ?? "";
+            if (!string.Equals(legacyName, "Fluid Glass (Default)", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(legacyName, "fluid-glass", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            static bool Same(string? a, string? b)
+            {
+                if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return true;
+                if (!ThemeEngine.TryParseColor(a, out var ca)) return false;
+                if (!ThemeEngine.TryParseColor(b, out var cb)) return false;
+                return ca == cb;
+            }
+
+            bool matchesFluidGlassColors =
+                Same(legacy.BackgroundColor, "#991E1E24") &&
+                Same(legacy.HeaderColor, "#CC141418") &&
+                Same(legacy.FontColor, "#FFFFFFFF") &&
+                Same(legacy.SecondaryFontColor, "#FFB0B0B8") &&
+                Same(legacy.AccentColor, "#FF0078D4");
+
+            var defaultSettings = new ThemeSettings();
+            bool matchesClassDefaultColors =
+                Same(legacy.BackgroundColor, defaultSettings.BackgroundColor) &&
+                Same(legacy.HeaderColor, defaultSettings.HeaderColor) &&
+                Same(legacy.FontColor, defaultSettings.FontColor) &&
+                Same(legacy.SecondaryFontColor, defaultSettings.SecondaryFontColor) &&
+                Same(legacy.AccentColor, defaultSettings.AccentColor);
+
+            return matchesFluidGlassColors || matchesClassDefaultColors || ColoursMatch(ThemeCatalog.Default, legacy);
         }
 
         private static bool ColoursMatch(ThemeDefinition builtin, ThemeSettings legacy)

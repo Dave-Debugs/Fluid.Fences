@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
         run: |
           $rawTag = "${{ github.event.release.tag_name }}"
-          $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.2.0' }
+          $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.3.5' }
           dotnet build DesktopFences.csproj -c Release -p:PackageVersion=$version
         
       - name: Publish to NuGet

@@ -217,17 +217,17 @@
 
                 <Border.ContextMenu>
                     <ContextMenu x:Name="HeaderContextMenu">
-                        <MenuItem Header="Create New...">
+                        <MenuItem x:Name="MenuCreateNew" Header="Create New...">
                             <MenuItem.Icon>
                                 <ui:SymbolIcon Symbol="Add24" />
                             </MenuItem.Icon>
-                            <MenuItem Click="Menu_NewFence_Click" Header="Empty Fence" Icon="{ui:SymbolIcon Symbol=Board24}" />
-                            <MenuItem Click="Menu_NewPortal_Click" Header="Folder Portal (Mirror PC Folder)" Icon="{ui:SymbolIcon Symbol=Folder24}" />
+                            <MenuItem x:Name="MenuNewEmptyFence" Click="Menu_NewFence_Click" Header="Empty Fence" Icon="{ui:SymbolIcon Symbol=Board24}" />
+                            <MenuItem x:Name="MenuNewPortalFence" Click="Menu_NewPortal_Click" Header="Folder Portal (Mirror PC Folder)" Icon="{ui:SymbolIcon Symbol=Folder24}" />
                             <Separator />
-                            <MenuItem Click="Menu_NewTab_Click" Header="New Tab Inside This Fence" Icon="{ui:SymbolIcon Symbol=Tab24}" />
+                            <MenuItem x:Name="MenuNewTab" Click="Menu_NewTab_Click" Header="New Tab Inside This Fence" Icon="{ui:SymbolIcon Symbol=Tab24}" />
                         </MenuItem>
 
-                        <MenuItem Click="Menu_AutoOrganize_Click" Header="Auto Organize (Pull from Desktop)" Icon="{ui:SymbolIcon Symbol=Desktop24}" />
+                        <MenuItem x:Name="MenuAutoOrganize" Click="Menu_AutoOrganize_Click" Header="Auto Organize (Pull from Desktop)" Icon="{ui:SymbolIcon Symbol=Desktop24}" />
                         <Separator />
 
                         <MenuItem
@@ -236,21 +236,21 @@
                             Header="Roll-up Fence"
                             Icon="{ui:SymbolIcon Symbol=ChevronUp24}" />
 
-                        <MenuItem Header="View">
+                        <MenuItem x:Name="MenuView" Header="View">
                             <MenuItem.Icon>
                                 <ui:SymbolIcon Symbol="Eye24" />
                             </MenuItem.Icon>
                             <MenuItem x:Name="MenuIconSize" Header="Icon Size">
-                                <MenuItem Click="Menu_IconSize_Click" Header="Small" Tag="32" />
-                                <MenuItem Click="Menu_IconSize_Click" Header="Medium" Tag="48" />
-                                <MenuItem Click="Menu_IconSize_Click" Header="Large" Tag="64" />
+                                <MenuItem x:Name="MenuIconSizeSmall" Click="Menu_IconSize_Click" Header="Small" Tag="32" />
+                                <MenuItem x:Name="MenuIconSizeMedium" Click="Menu_IconSize_Click" Header="Medium" Tag="48" />
+                                <MenuItem x:Name="MenuIconSizeLarge" Click="Menu_IconSize_Click" Header="Large" Tag="64" />
                             </MenuItem>
                             <MenuItem x:Name="MenuSortBy" Header="Sort By">
-                                <MenuItem Click="Menu_Sort_Click" Header="Name" Tag="Name" />
-                                <MenuItem Click="Menu_Sort_Click" Header="Size" Tag="Size" />
-                                <MenuItem Click="Menu_Sort_Click" Header="Item Type" Tag="Type" />
-                                <MenuItem Click="Menu_Sort_Click" Header="Date Modified" Tag="DateMod" />
-                                <MenuItem Click="Menu_Sort_Click" Header="Date Created" Tag="DateCre" />
+                                <MenuItem x:Name="MenuSortByName" Click="Menu_Sort_Click" Header="Name" Tag="Name" />
+                                <MenuItem x:Name="MenuSortBySize" Click="Menu_Sort_Click" Header="Size" Tag="Size" />
+                                <MenuItem x:Name="MenuSortByType" Click="Menu_Sort_Click" Header="Item Type" Tag="Type" />
+                                <MenuItem x:Name="MenuSortByDateMod" Click="Menu_Sort_Click" Header="Date Modified" Tag="DateMod" />
+                                <MenuItem x:Name="MenuSortByDateCre" Click="Menu_Sort_Click" Header="Date Created" Tag="DateCre" />
                             </MenuItem>
                         </MenuItem>
 
@@ -277,7 +277,6 @@
                             FontSize="12"
                             FontWeight="SemiBold"
                             Foreground="{DynamicResource CustomTextPrimaryBrush}"
-                            Text="{Binding FolderName}"
                             TextTrimming="CharacterEllipsis"
                             MouseLeftButtonDown="TitleText_MouseLeftButtonDown" />
                     </StackPanel>

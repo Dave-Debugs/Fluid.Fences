@@ -181,6 +181,40 @@ namespace DesktopFences.Core.Theming
                                                       allowScreenCapture: allowScreenCapture,
                                                       monitorIndex: monitorIndex,
                                                       region: region);
+            return BuildThemeFromSample(sample, dark, null);
+        }
+
+        public static async System.Threading.Tasks.Task<(ThemeDefinition? Theme, WallpaperSource Source, string? Problem)>
+            GenerateFromDesktopAsync(string? name = null, System.Windows.Rect? monitorRegion = null,
+                                     System.Threading.CancellationToken cancellationToken = default)
+        {
+            bool dark = !string.Equals(ThemeEngine.Current?.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase);
+            return await GenerateFromDesktopAsync(dark, allowScreenCapture: true, monitorIndex: null,
+                                                  region: monitorRegion, name: name,
+                                                  cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        public static async System.Threading.Tasks.Task<(ThemeDefinition? Theme, WallpaperSource Source, string? Problem)>
+            GenerateFromDesktopAsync(bool dark, bool allowScreenCapture = true, uint? monitorIndex = null,
+                                     System.Windows.Rect? region = null, string? name = null,
+                                     System.Threading.CancellationToken cancellationToken = default)
+        {
+            var sample = await WallpaperSampler.CaptureManyAsync(
+                frames: 5,
+                delayMs: 300,
+                region: region,
+                cancellationToken: cancellationToken,
+                allowScreenCapture: allowScreenCapture,
+                monitorIndex: monitorIndex).ConfigureAwait(false);
+
+            return await System.Threading.Tasks.Task.Run(
+                () => BuildThemeFromSample(sample, dark, name),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private static (ThemeDefinition? Theme, WallpaperSource Source, string? Problem)
+            BuildThemeFromSample(WallpaperSample? sample, bool dark, string? name)
+        {
             if (sample is null)
                 return (null, WallpaperSource.None,
                         "Your desktop background could not be read. Live wallpapers that render with DirectX are not always readable this way.");
@@ -197,7 +231,7 @@ namespace DesktopFences.Core.Theming
                 $"source={sample.Source} seed={ColorSpace.ToHex(seed.Value)} " +
                 $"top={string.Join(" | ", System.Linq.Enumerable.Take(palette, 3))}");
 
-            return (Generate(seed.Value, dark), sample.Source, null);
+            return (Generate(seed.Value, dark, name), sample.Source, null);
         }
     }
 }

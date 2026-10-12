@@ -1,127 +1,141 @@
 # Fluid Fences
 
-A fast, modern, open-source desktop organization application for Windows. Group your shortcuts, files, and folders into clean, translucent containers right on your desktop, and keep your workspace effortlessly organized.
+**Keep your Windows desktop clean, organized, and beautiful.**
 
-Built natively with **C#**, **WPF**, and **.NET 8** for Windows 10 and 11.
+**Fluid Fences** is a fast, lightweight, open-source desktop organizer for Windows 10 and 11. It lets you group your desktop shortcuts, files, and folders into sleek, translucent glass containers ("fences") that stay right on your wallpaper.
 
-![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.3.5-blue.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(64--bit)-0078D6)
 ![WCAG AAA](https://img.shields.io/badge/accessibility-100%25%20WCAG%20AAA-brightgreen.svg)
 
 ---
 
-## What's New in v2.2.0
+## What's New in v2.3.5
 
-- **30 Flagship Modern Themes**: An expansive catalog of 30 handcrafted themes spanning Dark, Light, Warm, Pastel, and Vibrant aesthetics.
-- **Categorized Themes Dashboard**: Distinct **Dark Themes** and **Light Themes** sections with a dedicated mode selector bar (`All`, `Dark`, `Light`) for seamless browsing.
-- **Dual-Mode Procedural Motion Loops**: Every theme features a bespoke 30fps H.264 procedural video loop. Light canvases use smooth watercolor alpha compositing, while dark canvases feature emissive additive glow.
-- **100% WCAG AAA Certified Readability**: Multi-surface contrast algorithms ensure ultra-crisp typography (up to 19:1 contrast) with automatic label halos that stay legible across light, dark, and animated wallpapers.
-- **Direct Donation & Verified QR Integration**: One-click donation via Venmo and Buy Me a Coffee directly in the dashboard.
-
----
-
-## Features
-
-### Desktop Organization
-- **Tabbed Fences**: Group related projects or categories into multiple tabs within a single fence window.
-- **Tear-Off & Merge**: Drag any tab onto the desktop to spawn a new fence, or drop one fence header onto another to merge them.
-- **Folder Portals**: Mirror any folder from your drive directly onto the desktop. Changes synchronize bi-directionally in real time.
-- **Auto-Organize**: Define file extension rules to automatically sweep new desktop files into designated fences.
-- **Layout Snapshots**: Save and restore your complete multi-monitor layout at any time.
-
-### Theming & Visual Experience
-- **30 Built-in Themes**:
-  - **Dark & Cyber (17)**: *Obsidian Prism, Solaris Flare, Neo Shinjuku, Synth Matrix, Cosmic Void, Kyoto Bamboo, Velvet Gold, Sunset Boulevard, Abyssal Trench, Supernova Core, Prismatic Aurora, Liquid Chrome, Solar Eclipse, Cyber Lotus, Hex Void, Molten Obsidian.*
-  - **Light, Warm & Pastel (13)**: *Matcha Latte, Nordic Daylight, Peach Blossom, Lavender Mist, Desert Sandstone, Oceanic Breeze, Sunlit Citrus, Sakura Studio, Cobalt Architectural, Earthy Terracotta, Ethereal Frost, Paper Minimal, Rose Quartz, Nordic Mirage.*
-- **Auto-Match Wallpaper Sampling**: Automatically extracts dominant and accent colors from your desktop wallpaper and creates a custom matching theme.
-- **Motion Video Loops**: 12 mathematical pattern families (Quantum Nebula, Vortex Swirl, Frost Caustic, Kaleido Crystal, Thermal Magma, Retro Grid, etc.) with adjustable opacity slider.
-- **Ghost Mode**: Fences stay completely translucent until hovered over.
-- **Window Roll-Up**: Double-click any fence header to roll it up into a slim title bar.
-
-### Navigation & Shortcuts
-- **Zen Mode (`Ctrl + Alt + Z` or `Ctrl + Shift + Z`)**: Instantly hide all fences for an unobstructed view of your desktop, and press again to reveal them.
-- **Quick Search**: Filter files and shortcuts instantly inside any fence via the built-in search bar.
-- **Multi-Property Sorting**: Sort items by Name, Date Modified, Size, or Type with persistent sorting on drag-and-drop.
-- **Per-Monitor DPI Awareness**: Crisp rendering and smooth snapping across multi-monitor setups with mixed scaling factors.
+- **Smart Multi-Fence Auto-Organize**: One click sweeps your cluttered desktop and automatically sorts your files into separate fences by file type (**Shortcuts & Apps**, **Documents**, **Images**, **Media**, **Archives**, **Code & Scripts**, and **Other Files**) while respecting any custom extension rules you've set.
+- **30 Built-In Animated & Glass Themes**: Switch instantly between **17 Dark & Cyber** themes and **13 Light, Warm & Pastel** themes, each paired with a smooth 30fps looping background animation.
+- **Generate a Theme from Your Wallpaper**: Sample your current desktop wallpaper (even animated wallpapers) with one click to build a custom, contrast-checked theme that matches your setup.
+- **Faster, Safer & More Reliable**: Upgraded file sorting performance, smoother multi-monitor DPI handling, stronger security checks for Folder Portals and theme packages, and moved to the official **[Dave-Debugs](https://github.com/Dave-Debugs/Fluid.Fences)** GitHub home.
 
 ---
 
-## How to Use Fluid Fences
+## Key Features at a Glance
 
-Fluid Fences runs quietly in your Windows system tray (near the clock).
+| Feature | What It Does |
+| :--- | :--- |
+| **Smart Auto-Organize** | Pulls loose files off your desktop and neatly sorts them into separate fences based on file type (or your own custom file extension rules). |
+| **Tabbed Fences** | Add multiple tabs to a single fence to group projects together. Drag a tab out to turn it into its own fence, or drop one fence onto another to merge them. |
+| **Folder Portals** | Mirror any folder on your PC (like *Downloads* or *Projects*) directly on your desktop without moving the original files. |
+| **30 Themes + Motion Loops** | Pick from 30 handcrafted dark and light themes with optional animated background loops and adjustable opacity. |
+| **Auto-Match Wallpaper** | Automatically tints your fences to match your desktop wallpaper—and updates automatically whenever your wallpaper changes. |
+| **Ghost Mode & Roll-Up** | Keep fences invisible until you hover over them (**Ghost Mode**), or double-click any fence's title bar to roll it up into a compact strip. |
+| **Zen Mode (`Ctrl+Alt+Z`)** | Instantly hide or show all fences on your desktop with a single keyboard shortcut. |
+| **Layout Snapshots** | Save your exact fence positions and sizes across all monitors and restore them anytime with one click. |
 
-### 1. Creating and Customizing Fences
-- **Create a New Fence**: Right-click the Fluid Fences tray icon and select **"Create New Fence"**.
-- **Move & Resize**: Click and drag the fence header to move it anywhere. Drag any edge or corner to resize.
-- **Add Items**: Drag and drop shortcuts, documents, folders, or files directly into the fence.
-- **Rename a Fence**: Double-click the header title text, type the new name, and press Enter.
+---
 
-### 2. Tabs, Merging & Portals
-- **Add a Tab**: Right-click a fence title bar and select **"New Tab Inside This Fence"**, or click the **`+`** button.
-- **Reorder Tabs**: Click and drag a tab left or right along the header bar.
-- **Tear Off a Tab**: Drag a tab out of the fence and release it onto the empty desktop to create an independent fence.
-- **Merge Fences**: Drag the header of one fence directly over another fence until the merge highlight appears, then release.
-- **Folder Portals**: Right-click the system tray icon and select **"Create New Folder Portal"**, then choose any local directory to mirror.
+## Quick Start Guide
 
-### 3. Themes & Motion Settings
-1. Double-click the Fluid Fences tray icon (or right-click and select **"Settings"**) to open the dashboard.
-2. Click the **Themes** tab in the sidebar.
-3. Use the mode bar at the top to filter by:
-   - **All Themes**: Browse the full 30-theme catalog separated by Dark and Light section bars.
-   - **Dark Themes**: View only the 17 dark, cyber, and deep space themes.
-   - **Light Themes**: View only the 13 light, pastel, warm, and vibrant themes.
-4. Click any theme swatch to apply it immediately to all open fences.
-5. Use the **Loop Opacity** slider to dial in your preferred video motion intensity.
+Fluid Fences lives quietly in your **Windows System Tray** (bottom-right corner near the clock).
 
-### 4. Useful Shortcuts
-- **Hide / Show All Fences (Zen Mode)**: `Ctrl + Alt + Z` (or `Ctrl + Shift + Z`)
-- **Roll Up / Unroll Fence**: Double-click the fence header
-- **Move Snapping**: Hold `Ctrl` while moving a fence with arrow keys for precision alignment
+### 1. Organize Your Desktop in One Click
+- Right-click the **Fluid Fences tray icon** (or click the **menu button** on any fence) and select **Auto-Organize Desktop**.
+- Fluid Fences will automatically group your desktop items into clean, separate fences by category:
+  - **Shortcuts & Apps** (`.lnk`, `.url`, `.exe`, `.msi`)
+  - **Documents** (`.pdf`, `.docx`, `.xlsx`, `.pptx`, `.txt`, `.csv`, `.md`, etc.)
+  - **Images** (`.png`, `.jpg`, `.gif`, `.webp`, `.svg`, `.psd`, etc.)
+  - **Media** (`.mp4`, `.mkv`, `.mov`, `.mp3`, `.wav`, `.flac`, etc.)
+  - **Archives** (`.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.iso`, etc.)
+  - **Code & Scripts** (`.cs`, `.py`, `.js`, `.ts`, `.html`, `.json`, `.ps1`, etc.)
+  - **Other Files** (anything else)
+- Want custom rules? Open **Settings -> Customize Fence** and type any extensions you want that specific fence to collect (e.g., `.blend, .fbx`).
+
+### 2. Everyday Fence Controls
+- **Create a Fence**: Right-click the tray icon -> **Create New Fence** (or use a fence's `Menu -> Create New` option).
+- **Add Files**: Drag and drop any file, folder, or shortcut straight into a fence.
+- **Rename Anything**:
+  - **Fence Title**: Double-click the fence header text (or right-click -> **Rename Fence**).
+  - **Tab Title**: Double-click the tab name.
+  - **Item Name**: Single-click an icon's text label (or right-click the icon -> **Rename**).
+- **Roll Up / Unroll**: Double-click a fence's empty header bar to collapse it into a thin title bar.
+- **Dock to Screen Edges**: Drag a fence to the edge of your monitor (or press `Ctrl + Arrow Keys`) to snap it cleanly.
+
+### 3. Tabs, Merging & Folder Portals
+- **Add a Tab**: Click the **`+`** button on a fence's header or select `Menu -> Create New -> New Tab Inside This Fence`.
+- **Separate a Tab**: Drag any tab off the tab bar and drop it onto your desktop to turn it into a standalone fence.
+- **Merge Two Fences**: Hold **Shift** while dragging one fence over another until it highlights, then release to combine them into tabs.
+- **Create a Folder Portal**: Right-click the tray icon -> **Create Folder Portal...** and pick any folder on your computer to view and manage its contents live on your desktop.
+
+### 4. Change Themes & Colors
+1. Double-click the **Fluid Fences tray icon** to open **Settings**.
+2. Go to the **Themes** tab to browse all 30 built-in **Dark** and **Light** themes, or click **Generate from Wallpaper** to create a theme from your current desktop background.
+3. Want one specific fence to stand out? Go to **Customize Fence** to give an individual fence its own custom color, opacity, or **Auto-Match Wallpaper** tint.
+
+---
+
+## Keyboard & Mouse Shortcuts
+
+| Shortcut / Action | Result |
+| :--- | :--- |
+| **`Ctrl + Alt + Z`** *(or `Ctrl + Shift + Z`)* | Toggle **Zen Mode** (hide/show all fences) |
+| **Double-click empty desktop** | Toggle **Zen Mode** *(can be enabled/disabled in Settings)* |
+| **Double-click fence header** | Roll up or unroll the fence |
+| **`Ctrl + Arrow Keys`** | Snap the active fence to the top, bottom, left, or right edge of your screen |
+| **`Shift + Drag` fence onto another fence** | Merge the dragged fence into the target fence as new tabs |
+| **`Ctrl + C` / `Ctrl + V`** | Copy selected files in a fence / Paste files from clipboard into a fence |
+| **`F2`** | Rename the selected item |
+| **`Delete`** | Remove selected items from the fence |
 
 ---
 
 ## Installation
 
-Download the latest release from the [Releases page](https://github.com/DaveDebugs/Fluid.Fences/releases), run the installer, and launch Fluid Fences.
+1. Download the latest **`FluidFences-2.3.5-Setup.exe`** installer from the [Releases page](https://github.com/Dave-Debugs/Fluid.Fences/releases).
+2. Run the installer and launch **Fluid Fences**.
 
-- Self-contained build: No separate .NET runtime installation required.
-- In-place updates: Preserves your existing fences, tabs, and custom layouts.
-- System requirements: Windows 10 or 11 (64-bit).
+- **No extra downloads needed**: The installer is 100% self-contained (you do not need to install .NET separately).
+- **Safe upgrades**: Installing a new version updates in place and keeps all of your existing fences, tabs, files, and settings intact.
+- **Requirements**: Windows 10 or Windows 11 (64-bit).
 
 ---
 
 ## Building from Source
 
-Fluid Fences can be compiled using **Visual Studio 2026** (or 2022) with the .NET 8 SDK:
+To build Fluid Fences yourself, install the **.NET 8 SDK** (or Visual Studio 2022 / 2026) and run:
 
 ```powershell
-# Clone the repository
-git clone https://github.com/DaveDebugs/Fluid.Fences.git
-
-# Build the Debug configuration
-dotnet build DesktopFences/DesktopFences.csproj -c Debug
-
-# Build the Release configuration
+git clone https://github.com/Dave-Debugs/Fluid.Fences.git
+cd Fluid.Fences
 dotnet build DesktopFences/DesktopFences.csproj -c Release
 ```
 
-The output executable will be generated in `P:\Programming Repositories\Compiled\Nuget\Debug\net8.0-windows\FluidFences.exe` (or local `bin/`).
+To run the automated unit test suite:
+
+```powershell
+dotnet test DesktopFences.Tests/DesktopFences.Tests.csproj -c Release
+```
 
 ---
 
-## Support & Contributing
+## Support & Feedback
 
-Bug reports, suggestions, and pull requests are warmly welcomed on the [GitHub Repository](https://github.com/DaveDebugs/Fluid.Fences).
+Found a bug or have an idea for a new feature? Open an issue on our [GitHub Repository](https://github.com/Dave-Debugs/Fluid.Fences/issues).
 
-If Fluid Fences enhances your daily workflow and you'd like to support ongoing development:
-- **Buy Me a Coffee**: [@Davedebugs](https://buymeacoffee.com/davedebugs)
+If Fluid Fences helps keep your desktop organized and you'd like to support the project:
+- **Buy Me a Coffee**: [buymeacoffee.com/davedebugs](https://buymeacoffee.com/davedebugs)
 - **Venmo**: [@Davedebugs](https://account.venmo.com/u/davedebugs)
 
 ---
 
 ## License
 
-Fluid Fences is free and open-source software licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for complete details.
+Fluid Fences is free and open-source software licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
 
-© 2026 DaveDebugs (David Daniel)
+Copyright (c) 2026 [Dave-Debugs](https://github.com/Dave-Debugs) (David Daniel)
+
+---
+
+## Keywords
+
+Desktop organization, desktop, stardock, fencesclone, fences, desktop fences, opensource, fencesalternative, Fluid Fences, Windows desktop organizer, Stardock Fences alternative, desktop icon organizer.

@@ -5,6 +5,19 @@ All notable changes to Fluid Fences are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.5] - 2026-10-12
+
+### Added
+- Smart Multi-Fence Auto-Organize: automatically sorts desktop files into separate fences by file type (`Shortcuts & Apps`, `Documents`, `Images`, `Media`, `Archives`, `Code & Scripts`, and `Other Files`) while honoring custom per-fence extension rules, accessible from both the fence menu and the system tray icon.
+- Direct GitHub (`Dave-Debugs`) button on the Settings Home page (`https://github.com/Dave-Debugs`).
+- xUnit test suite (`DesktopFences.Tests`) covering OKLCH color space math, WCAG contrast ratios, deterministic K-means palette extraction, theme generation, path-traversal protection, zip-bomb defense, and concurrent `ConfigStore` updates.
+- Full UI Automation (`AutomationId` and `Name`) coverage across fences, tabs, icons, and Settings navigation for automated E2E testing.
+
+### Changed
+- Migrated repository, package metadata, built-in theme author credits, installer URLs, and auto-updater endpoints to `Dave-Debugs`.
+- Hardened `ThemeCatalog` import/save path validation, streaming `.fftheme` decompression limits, and `ThemeEngine` custom token allowlists.
+- Synchronized STA `WScript.Shell` COM access, fixed `Window_Loaded` HWND recreation ordering, cancelled stale Folder Portal watchers on tab switches, and converted `ConfigStore` and `WallpaperSampler` to true async I/O.
+
 ## [2.2.0] - 2026-09-11
 
 ### Added
@@ -13,7 +26,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Dual-mode procedural motion engine delivering seamless 30fps H.264 video loops with watercolor alpha compositing on light canvases and additive glow on dark canvases.
 - Guaranteed 100% WCAG AAA multi-surface readability standards across light, gray, and dark desktop backdrops.
 - Persistent auto-sorting when files are dropped into a fence: dropping new files now preserves and applies the fence's active sort method (`Name`, `Date Modified`, `Size`, `Type`).
-- Active visual checkmarks (`✓`) on the selected sort mode under `View -> Sort By` and icon size under `View -> Icon Size` in fence context menus.
+- Active visual checkmarks on the selected sort mode under `View -> Sort By` and icon size under `View -> Icon Size` in fence context menus.
 - Graceful IPC application shutdown mechanism via named event `Local\FluidFences.Exit` and `--exit` command-line switch, coordinated with Inno Setup installer.
 - Security confirmation dialog before executing scripts or executables (.exe, .msi, .bat, .cmd, .ps1, etc.) from Folder Portals.
 - Architecture-specific 32-bit and 64-bit safe `SHFILEOPSTRUCT` Win32 definitions.

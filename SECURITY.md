@@ -4,10 +4,10 @@
 
 Current list of versions being supported with security updates.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.0.x   | :white_check_mark: |
-| < 2.0   | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| 2.3.x   | Yes       |
+| < 2.3   | No        |
 
 ## Reporting a Vulnerability
 

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "solaris-flare",
   "name": "Solaris Flare",
-  "author": "DaveDebugs",
+  "author": "Dave-Debugs",
   "category": "Energy",
   "baseTheme": "Dark",
   "pattern": "THERMAL_MAGMA",
