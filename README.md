@@ -123,7 +123,9 @@ dotnet test DesktopFences.Tests/DesktopFences.Tests.csproj -c Release
 Found a bug or have an idea for a new feature? Open an issue on our [GitHub Repository](https://github.com/Dave-Debugs/Fluid.Fences/issues).
 
 If Fluid Fences helps keep your desktop organized and you'd like to support the project:
-- **Buy Me a Coffee**: [buymeacoffee.com/davedebugs](https://buymeacoffee.com/davedebugs)
+
+<a href="https://www.buymeacoffee.com/davedebugs"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=davedebugs&button_colour=5F7FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
+
 - **Venmo**: [@Davedebugs](https://account.venmo.com/u/davedebugs)
 
 ---
