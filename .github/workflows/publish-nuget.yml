@@ -12,6 +12,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -35,9 +36,17 @@ jobs:
           $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.3.5' }
           dotnet build DesktopFences.csproj -c Release -p:PackageVersion=$version
 
-      - name: Publish to NuGet
+      - name: Publish to NuGet.org
         shell: pwsh
         run: |
           Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object {
             dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --skip-duplicate
+          }
+
+      - name: Publish to GitHub Packages
+        shell: pwsh
+        run: |
+          dotnet nuget add source --username Dave-Debugs --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/Dave-Debugs/index.json"
+          Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object {
+            dotnet nuget push $_.FullName --source "github" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
           }
