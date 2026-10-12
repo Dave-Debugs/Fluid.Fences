@@ -12,7 +12,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,12 +22,22 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: NuGet Login (Trusted Publishing OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: 'DaveDebugs'
+
       - name: Build and Pack
         shell: pwsh
         run: |
           $rawTag = "${{ github.event.release.tag_name }}"
           $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.3.5' }
           dotnet build DesktopFences.csproj -c Release -p:PackageVersion=$version
-        
+
       - name: Publish to NuGet
-        run: Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object { dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate }
+        shell: pwsh
+        run: |
+          Get-ChildItem "bin\Release\*.nupkg" | ForEach-Object {
+            dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --skip-duplicate
+          }
