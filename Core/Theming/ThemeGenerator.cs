@@ -133,7 +133,8 @@ namespace DesktopFences.Core.Theming
         {
             Color backdrop = ColorSpace.EffectiveBackdrop(background);
 
-            foreach (double scale in new[] { 1.0, 0.8, 0.62, 0.45, 0.3, 0.18, 0.08 })
+            ReadOnlySpan<double> scales = [1.0, 0.8, 0.62, 0.45, 0.3, 0.18, 0.08];
+            foreach (double scale in scales)
             {
                 double c = chroma * scale;
                 double lo = preferLighter ? ColorSpace.RgbToLch(backdrop).L : 0.0;

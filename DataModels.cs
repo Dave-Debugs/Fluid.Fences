@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace DesktopFences
 {
-    public class GlobalConfig
+    public sealed class GlobalConfig
     {
         [JsonPropertyName("FirstRunComplete")] public bool FirstRunComplete { get; set; } = true;
         [JsonPropertyName("ShowTaskbarIcon")] public bool ShowTaskbarIcon { get; set; } = true;
@@ -16,7 +16,7 @@ namespace DesktopFences
         [JsonPropertyName("Theme")] public Core.ThemeSettings Theme { get; set; } = new Core.ThemeSettings();
     }
 
-    public class SnapshotData
+    public sealed class SnapshotData
     {
         [JsonPropertyName("FenceId")] public string FenceId { get; set; } = "";
         [JsonPropertyName("Left")] public double Left { get; set; }
@@ -30,7 +30,7 @@ namespace DesktopFences
         [JsonPropertyName("ExpandedTop")] public double ExpandedTop { get; set; }
     }
 
-    public class FenceTab
+    public sealed class FenceTab
     {
         [JsonPropertyName("TabId")] public string TabId { get; set; } = System.Guid.NewGuid().ToString();
         [JsonPropertyName("Title")] public string Title { get; set; } = "New Tab";
@@ -41,7 +41,7 @@ namespace DesktopFences
         [JsonPropertyName("Files")] public List<string> Files { get; set; } = [];
     }
 
-    public class FenceData
+    public sealed class FenceData
     {
         [JsonPropertyName("Left")] public double Left { get; set; }
         [JsonPropertyName("Top")] public double Top { get; set; }

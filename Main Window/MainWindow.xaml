@@ -182,7 +182,13 @@
                 <ColumnDefinition x:Name="HeaderColRight" Width="0" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Row="0" Grid.RowSpan="3" Grid.Column="0" Grid.ColumnSpan="3">
+            <Grid
+                Grid.Row="0"
+                Grid.RowSpan="3"
+                Grid.Column="0"
+                Grid.ColumnSpan="3"
+                IsHitTestVisible="False"
+                Visibility="{Binding Visibility, ElementName=BackgroundMedia}">
                 <Grid.OpacityMask>
                     <VisualBrush>
                         <VisualBrush.Visual>
@@ -199,7 +205,7 @@
                     Stretch="UniformToFill"
                     IsMuted="True"
                     MediaEnded="BackgroundMedia_MediaEnded"
-                    Visibility="Hidden" />
+                    Visibility="Collapsed" />
             </Grid>
 
             <Border
@@ -423,7 +429,7 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="4"
+                Width="8"
                 HorizontalAlignment="Left"
                 Panel.ZIndex="1000"
                 Cursor="SizeWE"
@@ -434,7 +440,7 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="4"
+                Width="8"
                 HorizontalAlignment="Right"
                 Panel.ZIndex="1000"
                 Cursor="SizeWE"
@@ -445,7 +451,7 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Height="4"
+                Height="8"
                 VerticalAlignment="Top"
                 Panel.ZIndex="1000"
                 Cursor="SizeNS"
@@ -456,7 +462,7 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Height="4"
+                Height="8"
                 VerticalAlignment="Bottom"
                 Panel.ZIndex="1000"
                 Cursor="SizeNS"
@@ -468,8 +474,8 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="6"
-                Height="6"
+                Width="14"
+                Height="14"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
                 Panel.ZIndex="1001"
@@ -481,8 +487,8 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="6"
-                Height="6"
+                Width="14"
+                Height="14"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
                 Panel.ZIndex="1001"
@@ -494,8 +500,8 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="6"
-                Height="6"
+                Width="14"
+                Height="14"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Bottom"
                 Panel.ZIndex="1001"
@@ -507,8 +513,8 @@
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
-                Width="6"
-                Height="6"
+                Width="14"
+                Height="14"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Bottom"
                 Panel.ZIndex="1001"

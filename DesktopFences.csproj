@@ -8,7 +8,7 @@
 		<UseWPF>true</UseWPF>
 		<UseWindowsForms>true</UseWindowsForms>
 		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<GeneratePackageOnBuild Condition="'$(Configuration)' == 'Release'">True</GeneratePackageOnBuild>
 		<PublishReadyToRun>true</PublishReadyToRun>
 		<TieredCompilation>true</TieredCompilation>
 
@@ -16,7 +16,7 @@
 
 		<ApplicationManifest>app.manifest</ApplicationManifest>
 
-		<NoWarn>$(NoWarn);WFAC010</NoWarn>
+		<NoWarn>$(NoWarn);WFAC010;JS01;JN01;JS02;JN02;JS03;JN03</NoWarn>
 
 		<BaseOutputPath>bin\</BaseOutputPath>
 		<Title>Fluid.Fences</Title>
@@ -38,7 +38,7 @@
 		<PackageId>FluidFences</PackageId>
 		<Authors>Dave-Debugs</Authors>
 		<Product>FluidFences</Product>
-		<Version>2.3.5</Version>
+		<Version>2.3.6</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

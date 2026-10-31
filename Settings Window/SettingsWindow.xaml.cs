@@ -13,9 +13,9 @@ using System.Windows.Media.Animation;
 
 namespace DesktopFences
 {
-    public partial class SettingsWindow : Wpf.Ui.Controls.FluentWindow
+    public sealed partial class SettingsWindow : Wpf.Ui.Controls.FluentWindow
     {
-        public class FenceListItem
+        public sealed class FenceListItem
         {
             public MainWindow Fence { get; }
             public string Title { get; set; }
@@ -34,11 +34,17 @@ namespace DesktopFences
         private Color _pendingColor;
         private double _pendingOpacity;
         private bool _hasPendingColor;
+        private bool _pendingColorIsCustom;
 
         public SettingsWindow(MainWindow? callingFence, bool isFirstRun = false)
         {
             InitializeComponent();
             _callingFence = callingFence;
+            Loaded += (_, _) =>
+            {
+                Core.Theming.WallpaperSampler.ExcludedWindowHandle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                UpdateWindowBorderColor();
+            };
 
             PresetDropdown.SelectedIndex = 0;
 
@@ -73,7 +79,16 @@ namespace DesktopFences
             {
                 if (_hasPendingColor && _currentlySelectedFence is not null)
                 {
-                    _currentlySelectedFence.SetFenceColor(_pendingColor, _pendingOpacity);
+                    if (_pendingColorIsCustom || _currentlySelectedFence.ColorSource == FenceColorSource.Custom)
+                    {
+                        _currentlySelectedFence.SetFenceColor(_pendingColor, _pendingOpacity);
+                        _pendingColorIsCustom = false;
+                        UpdateColorSourceCard();
+                    }
+                    else
+                    {
+                        _currentlySelectedFence.SetFenceOpacity(_pendingOpacity);
+                    }
                     _hasPendingColor = false;
                 }
                 else
@@ -151,18 +166,18 @@ namespace DesktopFences
             SetPillStyle(ThemeTabLight, _themeCategoryMode == "Light");
         }
 
-        private void SetPillStyle(Button btn, bool isActive)
+        private static void SetPillStyle(Button btn, bool isActive)
         {
             if (btn is null) return;
             if (isActive)
             {
-                btn.Background = (Brush)TryFindResource("CustomAccentBrush");
-                btn.Foreground = (Brush)TryFindResource("CustomTextOnAccentBrush");
+                btn.SetResourceReference(Control.BackgroundProperty, "CustomAccentBrush");
+                btn.SetResourceReference(Control.ForegroundProperty, "CustomTextOnAccentBrush");
             }
             else
             {
                 btn.Background = Brushes.Transparent;
-                btn.Foreground = (Brush)TryFindResource("TextFillColorSecondaryBrush");
+                btn.SetResourceReference(Control.ForegroundProperty, "CustomTextSecondaryBrush");
             }
         }
 
@@ -189,7 +204,7 @@ namespace DesktopFences
             catch (Exception ex) { LogError("HighlightActiveSwatch", ex); }
         }
 
-        private void HighlightGallery(ListBox gallery)
+        private static void HighlightGallery(ListBox gallery)
         {
             if (gallery is null) return;
             foreach (var item in gallery.Items)
@@ -203,9 +218,10 @@ namespace DesktopFences
                 bool active = item is Core.Theming.ThemeDefinition t &&
                               string.Equals(t.Id, App.ActiveThemeId, StringComparison.OrdinalIgnoreCase);
 
-                border.BorderBrush = active
-                    ? (Brush)(TryFindResource("SystemAccentColorPrimaryBrush") ?? Brushes.DodgerBlue)
-                    : Brushes.Transparent;
+                if (active)
+                    border.SetResourceReference(Border.BorderBrushProperty, "CustomAccentBrush");
+                else
+                    border.BorderBrush = Brushes.Transparent;
             }
         }
 
@@ -394,6 +410,7 @@ namespace DesktopFences
             RefreshStats();
             UpdateColorSourceCard();
             ShowStatus($"{theme.Name} applied.", StatusKind.Success);
+            UpdateWindowBorderColor(theme);
         }
 
         private void OnThemeApplied(object? sender, Core.Theming.ThemeDefinition theme)
@@ -407,10 +424,56 @@ namespace DesktopFences
             try
             {
                 Wpf.Ui.Appearance.ApplicationThemeManager.Apply(this);
+                UpdateThemeTabStyles();
                 HighlightActiveSwatch();
-
+                UpdateWindowBorderColor(theme);
             }
             catch (Exception ex) { LogError("OnThemeApplied", ex); }
+        }
+
+        protected override void OnActivated(EventArgs e)
+        {
+            base.OnActivated(e);
+            UpdateWindowBorderColor();
+        }
+
+        private void UpdateWindowBorderColor(Core.Theming.ThemeDefinition? theme = null)
+        {
+            try
+            {
+                if (Environment.OSVersion.Version.Build < 22000) return;
+
+                var helper = new System.Windows.Interop.WindowInteropHelper(this);
+                IntPtr hwnd = helper.Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                if (Wpf.Ui.Appearance.ApplicationAccentColorManager.IsAccentColorOnTitleBarsEnabled)
+                {
+                    Color accent = Wpf.Ui.Appearance.ApplicationAccentColorManager.SystemAccent;
+                    theme ??= Core.Theming.ThemeEngine.Current;
+                    if (theme != null && Core.Theming.ThemeEngine.TryParseColor(theme.Colors.Accent, out Color parsedAccent))
+                    {
+                        accent = parsedAccent;
+                    }
+
+                    int colorRef = (accent.B << 16) | (accent.G << 8) | accent.R;
+                    NativeMethods.DwmSetWindowAttribute(
+                        hwnd,
+                        (int)NativeMethods.DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR,
+                        ref colorRef,
+                        sizeof(int));
+
+                    NativeMethods.SetWindowPos(
+                        hwnd,
+                        IntPtr.Zero,
+                        0, 0, 0, 0,
+                        NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_FRAMECHANGED);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError("UpdateWindowBorderColor", ex);
+            }
         }
 
         private void ThemeGallery_KeyDown(object sender, KeyEventArgs e)
@@ -546,8 +609,16 @@ namespace DesktopFences
             }
             catch { }
 
-            Core.Theming.ThemeEngine.ThemeApplied -= OnThemeApplied;
+            foreach (Window w in Application.Current.Windows)
+            {
+                if (w is MainWindow fence && fence.GetIsRolledUp() && !fence.IsMouseOver)
+                {
+                    fence.DismissTemporaryReveal();
+                }
+            }
 
+            Core.Theming.ThemeEngine.ThemeApplied -= OnThemeApplied;
+            Core.Theming.WallpaperSampler.ExcludedWindowHandle = IntPtr.Zero;
         }
 
         private static void RgbToHsl(Color rgb, out double h, out double s, out double l)
@@ -772,6 +843,10 @@ namespace DesktopFences
 
                 UpdateColorSlidersFromFence(fence);
                 UpdateColorSourceCard();
+                if (fence.GetIsRolledUp())
+                {
+                    fence.RevealTemporarily();
+                }
                 _isLoadingFenceData = false;
             }
         }
@@ -780,13 +855,13 @@ namespace DesktopFences
         {
             _isColorInitializing = true;
             Color startColor = fence.FenceColor; AlphaSlider.Value = fence.FenceOpacity * 100.0;
-            if (BlendWallpaperToggle is not null) BlendWallpaperToggle.IsChecked = (AlphaSlider.Value <= 1.0);
+            if (BlendWallpaperToggle is not null) BlendWallpaperToggle.IsChecked = (AlphaSlider.Value <= 2.0);
             if (AutoMatchToggle is not null) AutoMatchToggle.IsChecked = fence.AutoMatchColor;
 
             bool isAuto = fence.AutoMatchColor; HueSlider.IsEnabled = !isAuto; SaturationSlider.IsEnabled = !isAuto; LightnessSlider.IsEnabled = !isAuto;
             double opacity = isAuto ? 0.4 : 1.0; HueSlider.Opacity = opacity; SaturationSlider.Opacity = opacity; LightnessSlider.Opacity = opacity;
 
-            System.Drawing.Color sysColor = System.Drawing.Color.FromArgb(startColor.A, startColor.R, startColor.G, startColor.B);
+            System.Drawing.Color sysColor = System.Drawing.Color.FromArgb(255, startColor.R, startColor.G, startColor.B);
             HueSlider.Value = sysColor.GetHue(); SaturationSlider.Value = sysColor.GetSaturation() * 100.0; LightnessSlider.Value = sysColor.GetBrightness() * 100.0;
             UpdateColorPreview(); _isColorInitializing = false;
         }
@@ -797,6 +872,15 @@ namespace DesktopFences
 
             bool isAuto = AutoMatchToggle.IsChecked == true;
             _currentlySelectedFence.AutoMatchColor = isAuto;
+
+            if (isAuto)
+            {
+                ThemeUtility.InvalidateWallpaperCache();
+                if (_currentlySelectedFence.FenceOpacity <= 0.05)
+                {
+                    _currentlySelectedFence.SetFenceOpacity(0.75);
+                }
+            }
 
             _currentlySelectedFence.ColorSource = isAuto
                 ? FenceColorSource.AutoMatch
@@ -856,14 +940,29 @@ namespace DesktopFences
         private void ColorSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_isColorInitializing || _currentlySelectedFence is null) return;
-            if (sender == AlphaSlider && BlendWallpaperToggle is not null) BlendWallpaperToggle.IsChecked = (AlphaSlider.Value <= 1.0);
+            bool isOpacityOnly = (sender == AlphaSlider);
+            if (isOpacityOnly && BlendWallpaperToggle is not null)
+            {
+                BlendWallpaperToggle.IsChecked = (AlphaSlider.Value <= 2.0);
+            }
+            if (!isOpacityOnly)
+            {
+                _pendingColorIsCustom = true;
+            }
             UpdateColorPreview();
         }
 
         private void BlendWallpaperToggle_Click(object sender, RoutedEventArgs e)
         {
             if (_isColorInitializing || _currentlySelectedFence is null) return;
-            if (BlendWallpaperToggle.IsChecked == true) AlphaSlider.Value = 1; else AlphaSlider.Value = 70;
+            _isColorInitializing = true;
+            double targetAlpha = BlendWallpaperToggle.IsChecked == true ? 1.0 : 75.0;
+            AlphaSlider.Value = targetAlpha;
+            UpdateColorPreview();
+            _isColorInitializing = false;
+
+            _currentlySelectedFence.SetFenceOpacity(targetAlpha / 100.0);
+            UpdateColorSourceCard();
         }
 
         private void UpdateColorPreview()
@@ -995,7 +1094,16 @@ namespace DesktopFences
                 };
 
                 foreach (Window w in Application.Current.Windows)
-                    if (w is MainWindow fence) fence.ApplyTheme(legacy);
+                {
+                    if (w is MainWindow fence)
+                    {
+                        fence.ApplyTheme(legacy);
+                        if (fence.GetIsRolledUp())
+                        {
+                            fence.RevealTemporarily();
+                        }
+                    }
+                }
             }
             catch (Exception ex) { LogError("ApplyMediaToOpenFences", ex); }
         }

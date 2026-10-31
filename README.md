@@ -4,10 +4,20 @@
 
 **Fluid Fences** is a fast, lightweight, open-source desktop organizer for Windows 10 and 11. It lets you group your desktop shortcuts, files, and folders into sleek, translucent glass containers ("fences") that stay right on your wallpaper.
 
-![Version](https://img.shields.io/badge/version-2.3.5-blue.svg)
+![Version](https://img.shields.io/badge/version-2.3.6-blue.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(64--bit)-0078D6)
 ![WCAG AAA](https://img.shields.io/badge/accessibility-100%25%20WCAG%20AAA-brightgreen.svg)
+
+---
+
+## What's New in v2.3.6
+
+- **Refined Fence Resizing & Hover Debounce**: Expanded edge hit targets (8 DIPs on borders, 14×14 DIPs on corners) and tuned the roll-up hover debounce to 150ms for effortless edge resizing without premature collapse.
+- **Real-Time Windows 11 DWM Border Sync**: Window border outlines in the Settings dialog now update immediately via DWM APIs upon clicking theme swatches without requiring focus switching.
+- **Auto-Organize Safety Confirmation**: Cleaned up desktop file organization with a clear confirmation dialog before moving desktop items into categorized fences.
+- **Hardened Stability & Concurrency**: Eliminated window-close race conditions during shutdown and resolved concurrent wallpaper sampling locks across multi-monitor environments.
+- **Zero-Warning Code Quality**: Cleaned up all compiler and IDE code-style diagnostics with expanded unit test coverage across all core services (47 automated tests passing).
 
 ---
 
@@ -91,7 +101,7 @@ Fluid Fences lives quietly in your **Windows System Tray** (bottom-right corner 
 
 ## Installation
 
-1. Download the latest **`FluidFences-2.3.5-Setup.exe`** installer from the [Releases page](https://github.com/Dave-Debugs/Fluid.Fences/releases).
+1. Download the latest **`FluidFences-2.3.6-Setup.exe`** installer from the [Releases page](https://github.com/Dave-Debugs/Fluid.Fences/releases).
 2. Run the installer and launch **Fluid Fences**.
 
 - **No extra downloads needed**: The installer is 100% self-contained (you do not need to install .NET separately).

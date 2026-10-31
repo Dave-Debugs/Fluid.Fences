@@ -34,7 +34,7 @@ namespace DesktopFences
             "https://api.github.com/repos/DaveDebugs/Fluid.Fences/releases/latest"
         ];
 
-        [GeneratedRegex("^[A-Fa-f0-9]{64}$", RegexOptions.Compiled)]
+        [GeneratedRegex("^[A-Fa-f0-9]{64}$")]
         private static partial Regex Sha256HexRegex();
 
         private static readonly HttpClient _httpClient = CreateHttpClient();
@@ -51,13 +51,13 @@ namespace DesktopFences
             return client;
         }
 
-        public class GitHubRelease
+        public sealed class GitHubRelease
         {
             [JsonPropertyName("tag_name")] public string TagName { get; set; } = "";
             [JsonPropertyName("assets")] public List<GitHubAsset> Assets { get; set; } = [];
         }
 
-        public class GitHubAsset
+        public sealed class GitHubAsset
         {
             [JsonPropertyName("browser_download_url")] public string DownloadUrl { get; set; } = "";
             [JsonPropertyName("name")] public string Name { get; set; } = "";
@@ -136,6 +136,57 @@ namespace DesktopFences
                    uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
         }
 
+        internal static string ParseExpectedHash(string checksumContent, string assetName)
+        {
+            if (string.IsNullOrWhiteSpace(checksumContent) || string.IsNullOrWhiteSpace(assetName))
+                return string.Empty;
+
+            string targetFile = Path.GetFileName(assetName);
+            var nonEmptyLines = checksumContent.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var line in nonEmptyLines)
+            {
+                string trimmed = line.Trim();
+
+                if (trimmed.StartsWith("SHA256", StringComparison.OrdinalIgnoreCase))
+                {
+                    int openParen = trimmed.IndexOf('(');
+                    int closeParen = trimmed.IndexOf(')');
+                    int eqIdx = trimmed.LastIndexOf('=');
+
+                    if (openParen >= 0 && closeParen > openParen && eqIdx > closeParen)
+                    {
+                        string insideParens = trimmed.Substring(openParen + 1, closeParen - openParen - 1).Trim();
+                        string parsedFileName = Path.GetFileName(insideParens);
+
+                        if (string.Equals(parsedFileName, targetFile, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string hashCandidate = trimmed.Substring(eqIdx + 1).Trim();
+                            if (Sha256HexRegex().IsMatch(hashCandidate))
+                                return hashCandidate.ToUpperInvariant();
+                        }
+                    }
+                }
+
+                var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && Sha256HexRegex().IsMatch(parts[0]))
+                {
+                    string filePart = string.Join(" ", parts.Skip(1)).TrimStart('*', ' ');
+                    string parsedFileName = Path.GetFileName(filePart);
+                    if (string.Equals(parsedFileName, targetFile, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return parts[0].ToUpperInvariant();
+                    }
+                }
+                else if (nonEmptyLines.Length == 1 && parts.Length == 1 && Sha256HexRegex().IsMatch(parts[0]))
+                {
+                    return parts[0].ToUpperInvariant();
+                }
+            }
+
+            return string.Empty;
+        }
+
         private static async Task ApplySecureUpdateAsync(string installerUrl, string checksumUrl, string assetName)
         {
             if (!IsTrustedDownloadUri(installerUrl) || !IsTrustedDownloadUri(checksumUrl))
@@ -154,47 +205,11 @@ namespace DesktopFences
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
                 string checksumContent = await _httpClient.GetStringAsync(checksumUrl, cts.Token);
-                string expectedHash = "";
-                string targetFile = Path.GetFileName(assetName);
-                var nonEmptyLines = checksumContent.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var line in nonEmptyLines)
-                {
-                    string trimmed = line.Trim();
-                    if (trimmed.StartsWith("SHA256", StringComparison.OrdinalIgnoreCase) && trimmed.Contains(targetFile, StringComparison.OrdinalIgnoreCase))
-                    {
-                        int eqIdx = trimmed.LastIndexOf('=');
-                        if (eqIdx >= 0)
-                        {
-                            string candidate = trimmed.Substring(eqIdx + 1).Trim();
-                            if (Sha256HexRegex().IsMatch(candidate))
-                            {
-                                expectedHash = candidate.ToUpperInvariant();
-                                break;
-                            }
-                        }
-                    }
-
-                    var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length >= 2 && Sha256HexRegex().IsMatch(parts[0]))
-                    {
-                        string filePart = string.Join(" ", parts.Skip(1)).TrimStart('*', ' ');
-                        if (string.Equals(filePart, targetFile, StringComparison.OrdinalIgnoreCase) ||
-                            filePart.EndsWith(targetFile, StringComparison.OrdinalIgnoreCase))
-                        {
-                            expectedHash = parts[0].ToUpperInvariant();
-                            break;
-                        }
-                    }
-                    else if (nonEmptyLines.Length == 1 && parts.Length == 1 && Sha256HexRegex().IsMatch(parts[0]) && string.IsNullOrEmpty(expectedHash))
-                    {
-                        expectedHash = parts[0].ToUpperInvariant();
-                    }
-                }
+                string expectedHash = ParseExpectedHash(checksumContent, assetName);
 
                 if (string.IsNullOrEmpty(expectedHash))
                 {
-                    MessageBox.Show("Security Alert: The downloaded checksum format was invalid or did not contain a hash for this file. The update has been aborted.",
+                    MessageBox.Show("Security Alert: The downloaded checksum format was invalid or did not contain a matching hash for this update file. The update has been aborted.",
                                     "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
@@ -220,7 +235,7 @@ namespace DesktopFences
 
                         if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
                         {
-                            fileStream.Close();
+                            await fileStream.DisposeAsync();
                             TryDelete(installerPath);
                             MessageBox.Show(
                                 "Security Alert: The downloaded update was corrupted or tampered with. The update has been aborted.",

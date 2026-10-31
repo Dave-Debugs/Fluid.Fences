@@ -267,25 +267,12 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Focusable" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Grid>
-                            <ContentPresenter />
-                            <Border x:Name="FocusRing"
-                                    Margin="-3"
-                                    CornerRadius="10"
-                                    BorderThickness="2"
-                                    BorderBrush="{DynamicResource CustomFocusRingBrush}"
-                                    Visibility="Collapsed"
-                                    SnapsToDevicePixels="True" />
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="FocusRing" Property="Visibility" Value="Visible" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
+                        <ContentPresenter />
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -454,7 +441,7 @@
                                     <Button x:Name="VenmoQrButton" Grid.Column="1" Click="VenmoQr_Click"
                                             Cursor="Hand"
                                             HorizontalAlignment="Right" VerticalAlignment="Center"
-                                            MinWidth="96" MaxWidth="240"
+                                            Width="112" Height="112"
                                             Background="Transparent" BorderThickness="0" Padding="0"
                                             ToolTip="Open this Venmo link in your browser"
                                             AutomationProperties.Name="Donate via Venmo, opens the link in your browser">
@@ -464,7 +451,8 @@
                                                         BorderBrush="{DynamicResource CustomFocusRingBrush}"
                                                         BorderThickness="0">
                                                     <Viewbox Stretch="Uniform">
-                                                        <Image Source="/Settings Window/BuyMeACoffeeQR.png"
+                                                        <Image Source="/Assets/BuyMeACoffeeQR.png"
+                                                               Stretch="Uniform"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
                                                     </Viewbox>
                                                 </Border>
@@ -550,19 +538,21 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <Border Grid.Column="0" Style="{StaticResource CardPanel}" Margin="0,0,16,0">
+                                <Border Grid.Column="0" Style="{StaticResource CardPanel}" Margin="0,0,16,0" VerticalAlignment="Top">
                                     <StackPanel>
                                         <TextBlock Text="Your fences" FontWeight="SemiBold" Margin="0,0,0,8" />
                                         <ui:ListView x:Name="FenceListBox" AutomationProperties.Name="Your fences" MinHeight="240" MaxHeight="420"
                                                      BorderThickness="0" Background="Transparent"
-                                                     SelectionChanged="FenceListBox_SelectionChanged" />
+                                                     SelectionChanged="FenceListBox_SelectionChanged"
+                                                     PreviewMouseWheel="ThemeGallery_PreviewMouseWheel" />
                                         <TextBlock x:Name="NoFencesHint" Style="{StaticResource FieldLabel}"
                                                    Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"
                                                    Text="No fences yet. Right-click the tray icon to create one." />
                                     </StackPanel>
                                 </Border>
 
-                                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
+                                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Disabled"
+                                              PreviewMouseWheel="ThemeGallery_PreviewMouseWheel"
                                               AutomationProperties.Name="Fence settings">
                                     <StackPanel x:Name="FenceDetailPanel">
 

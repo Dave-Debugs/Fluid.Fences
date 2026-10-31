@@ -19,6 +19,13 @@ namespace DesktopFences
 
         public static string Path => System.IO.Path.Combine(App.ConfigFolder, "global_config.json");
 
+        public static GlobalConfig Read()
+        {
+            _gate.Wait();
+            try { return ReadUnlocked(); }
+            finally { _gate.Release(); }
+        }
+
         public static async Task<GlobalConfig> ReadAsync()
         {
             await _gate.WaitAsync().ConfigureAwait(false);

@@ -13,10 +13,18 @@ using System.Threading.Tasks;
 namespace DesktopFences.Core.Theming
 {
 
-    public static class ThemeCatalog
+    public static partial class ThemeCatalog
     {
         private const string BuiltinResourcePrefix = "DesktopFences.Themes.Builtin.";
         public const string ThemePackageExtension = ".fftheme";
+
+        [GeneratedRegex(@"[^a-z0-9]+")]
+        private static partial Regex SlugifyRegex();
+
+        private static readonly System.Collections.Frozen.FrozenSet<string> AllowedMediaExtensions =
+            System.Collections.Frozen.FrozenSet.ToFrozenSet(
+                [".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
+                StringComparer.OrdinalIgnoreCase);
 
         public static string? LastImportProblem { get; private set; }
 
@@ -446,14 +454,10 @@ namespace DesktopFences.Core.Theming
                 {
                     string target = Path.Combine(UserThemeFolder, "media");
                     Directory.CreateDirectory(target);
-                    var allowedMedia = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                    {
-                        ".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"
-                    };
                     foreach (string file in Directory.GetFiles(mediaDir))
                     {
                         string ext = Path.GetExtension(file);
-                        if (!allowedMedia.Contains(ext)) continue;
+                        if (!AllowedMediaExtensions.Contains(ext)) continue;
                         string destFileName = $"{imported.Id}_{Path.GetFileName(file)}";
                         try
                         {
@@ -566,7 +570,7 @@ namespace DesktopFences.Core.Theming
         public static string Slugify(string input)
         {
             if (string.IsNullOrWhiteSpace(input)) return "theme";
-            string slug = Regex.Replace(input.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+            string slug = SlugifyRegex().Replace(input.ToLowerInvariant(), "-").Trim('-');
             return string.IsNullOrEmpty(slug) ? "theme" : slug;
         }
 

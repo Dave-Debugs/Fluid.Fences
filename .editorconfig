@@ -1,0 +1,11 @@
+# Top-most EditorConfig file
+root = true
+
+[*.cs]
+# Suppress third-party JSON DTO analyzer messages on WPF UI Windows
+dotnet_diagnostic.JS01.severity = none
+dotnet_diagnostic.JS02.severity = none
+dotnet_diagnostic.JS03.severity = none
+dotnet_diagnostic.JN01.severity = none
+dotnet_diagnostic.JN02.severity = none
+dotnet_diagnostic.JN03.severity = none

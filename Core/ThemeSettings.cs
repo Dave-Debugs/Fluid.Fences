@@ -11,7 +11,7 @@ namespace DesktopFences.Core
         None
     }
 
-    public class ThemeSettings : ObservableObject
+    public sealed class ThemeSettings : ObservableObject
     {
         private string _themeName = "Fluid Glass (Default)";
         public string ThemeName

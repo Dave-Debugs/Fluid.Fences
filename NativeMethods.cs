@@ -48,7 +48,11 @@ namespace DesktopFences
         }
 
         internal enum WindowCompositionAttribute { WCA_ACCENT_POLICY = 19 }
-        internal enum DWMWINDOWATTRIBUTE { DWMWA_WINDOW_CORNER_PREFERENCE = 33 }
+        internal enum DWMWINDOWATTRIBUTE
+        {
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33,
+            DWMWA_BORDER_COLOR = 34
+        }
         internal enum DWM_WINDOW_CORNER_PREFERENCE { DWMWCP_DEFAULT = 0, DWMWCP_DONOTROUND = 1, DWMWCP_ROUND = 2, DWMWCP_ROUNDSMALL = 3 }
 
         [LibraryImport("dwmapi.dll")]

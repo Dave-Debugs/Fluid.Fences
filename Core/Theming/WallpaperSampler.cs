@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -21,56 +22,61 @@ namespace DesktopFences.Core.Theming
 
     public sealed record WallpaperSample(byte[] Bgra, int Width, int Height, WallpaperSource Source);
 
-    public static class WallpaperSampler
+    public static partial class WallpaperSampler
     {
         private const int SPI_GETDESKWALLPAPER = 0x0073;
         private const int COLORONCOLOR = 3;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SystemParametersInfoW")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SystemParametersInfo(int uAction, int uParam, [Out] char[] lpvParam, int fuWinIni);
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "FindWindowW")]
-        private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+        [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true, EntryPoint = "FindWindowW")]
+        private static partial IntPtr FindWindow(string? lpClassName, string? lpWindowName);
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "FindWindowExW")]
-        private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string? className, string? windowName);
+        [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true, EntryPoint = "FindWindowExW")]
+        private static partial IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string? className, string? windowName);
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetDesktopWindow();
+        [LibraryImport("user32.dll")]
+        private static partial IntPtr GetDesktopWindow();
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetDC(IntPtr hWnd);
+        [LibraryImport("user32.dll")]
+        private static partial IntPtr GetDC(IntPtr hWnd);
 
-        [DllImport("user32.dll")]
-        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [LibraryImport("user32.dll")]
+        private static partial int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
-        [DllImport("user32.dll")]
-        private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+        [LibraryImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct RECT { public int Left, Top, Right, Bottom; }
 
-        [DllImport("gdi32.dll")]
-        private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+        [LibraryImport("gdi32.dll")]
+        private static partial IntPtr CreateCompatibleDC(IntPtr hdc);
 
-        [DllImport("gdi32.dll")]
-        private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int w, int h);
+        [LibraryImport("gdi32.dll")]
+        private static partial IntPtr CreateCompatibleBitmap(IntPtr hdc, int w, int h);
 
-        [DllImport("gdi32.dll")]
-        private static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+        [LibraryImport("gdi32.dll")]
+        private static partial IntPtr SelectObject(IntPtr hdc, IntPtr obj);
 
-        [DllImport("gdi32.dll")]
-        private static extern bool DeleteObject(IntPtr obj);
+        [LibraryImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool DeleteObject(IntPtr obj);
 
-        [DllImport("gdi32.dll")]
-        private static extern bool DeleteDC(IntPtr hdc);
+        [LibraryImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool DeleteDC(IntPtr hdc);
 
-        [DllImport("gdi32.dll")]
-        private static extern int SetStretchBltMode(IntPtr hdc, int mode);
+        [LibraryImport("gdi32.dll")]
+        private static partial int SetStretchBltMode(IntPtr hdc, int mode);
 
-        [DllImport("gdi32.dll")]
-        private static extern bool BitBlt(IntPtr dest, int dx, int dy, int w, int h,
-                                          IntPtr src, int sx, int sy, uint rop);
+        [LibraryImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool BitBlt(IntPtr dest, int dx, int dy, int w, int h,
+                                           IntPtr src, int sx, int sy, uint rop);
 
         private const uint SRCCOPY = 0x00CC0020;
 
@@ -232,6 +238,8 @@ namespace DesktopFences.Core.Theming
                 var pixels = new byte[converted.PixelHeight * stride];
                 converted.CopyPixels(pixels, stride, 0);
 
+                MaskExcludedWindow(pixels, captureW, captureH, stride, srcX, srcY, srcW, srcH);
+
                 if (IsEffectivelyBlank(pixels)) return null;
 
                 return new WallpaperSample(pixels, converted.PixelWidth, converted.PixelHeight,
@@ -252,9 +260,10 @@ namespace DesktopFences.Core.Theming
             }
         }
 
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern bool StretchBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
-                                              IntPtr hdcSrc, int xSrc, int ySrc, int wSrc, int hSrc, uint rop);
+        [LibraryImport("gdi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static partial bool StretchBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
+                                               IntPtr hdcSrc, int xSrc, int ySrc, int wSrc, int hSrc, uint rop);
 
         [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"),
          InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -480,9 +489,41 @@ namespace DesktopFences.Core.Theming
             return (maxR - minR) < 6 && (maxG - minG) < 6 && (maxB - minB) < 6;
         }
 
+        internal static IntPtr ExcludedWindowHandle { get; set; }
+
+        private static void MaskExcludedWindow(byte[] pixels, int captureW, int captureH, int stride,
+                                                int srcX, int srcY, int srcW, int srcH)
+        {
+            IntPtr hwnd = ExcludedWindowHandle;
+            if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out RECT exRect)) return;
+
+            int exLeft = Math.Clamp((int)((exRect.Left - srcX) * (captureW / (double)srcW)), 0, captureW);
+            int exRight = Math.Clamp((int)((exRect.Right - srcX) * (captureW / (double)srcW)), 0, captureW);
+            int exTop = Math.Clamp((int)((exRect.Top - srcY) * (captureH / (double)srcH)), 0, captureH);
+            int exBottom = Math.Clamp((int)((exRect.Bottom - srcY) * (captureH / (double)srcH)), 0, captureH);
+            int exArea = Math.Max(0, exRight - exLeft) * Math.Max(0, exBottom - exTop);
+
+            if (exArea > 0 && exArea < (captureW * captureH * 9 / 10))
+            {
+                for (int y = exTop; y < exBottom; y++)
+                {
+                    int rowOffset = y * stride;
+                    for (int x = exLeft; x < exRight; x++)
+                    {
+                        pixels[rowOffset + x * 4 + 3] = 0;
+                    }
+                }
+            }
+        }
+
         public static Color? AverageColor(bool allowScreenCapture = false)
         {
             var sample = Capture(allowScreenCapture);
+            return sample is null ? null : AverageColorFromSample(sample);
+        }
+
+        public static Color? AverageColorFromSample(WallpaperSample sample)
+        {
             if (sample is null) return null;
 
             double r = 0, g = 0, b = 0;

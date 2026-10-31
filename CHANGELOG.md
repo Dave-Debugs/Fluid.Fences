@@ -5,6 +5,20 @@ All notable changes to Fluid Fences are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.6] - 2026-10-31
+
+### Added
+- Real-time Windows 11 DWM accent border synchronization in Settings (`DwmSetWindowAttribute` with `DWMWA_BORDER_COLOR`), updating instantly on theme selection without requiring window focus toggles.
+- Auto-Organize pre-flight safety prompt confirming file move operations before sorting desktop files into category fences.
+- Unit test coverage for `AutoOrganizeService`, `FenceVaultService`, and `ThemeUtility`.
+
+### Changed
+- Refined fence resizing hit-targets: expanded outer edge grip bounds to 8 DIPs and corners to 14×14 DIPs for effortless cursor acquisition.
+- Tuned rolled-up fence hover collapse debounce timer to 150ms, eliminating edge flicker during resize motions while keeping unroll transitions crisp.
+- Fixed window-close concurrency deadlocks during shutdown sequence.
+- Resolved wallpaper dominant color sampling contention across multi-monitor setups.
+- Cleaned up IDE code-style warnings and added `.editorconfig` rules for clean Visual Studio and CLI builds.
+
 ## [2.3.5] - 2026-10-12
 
 ### Added
