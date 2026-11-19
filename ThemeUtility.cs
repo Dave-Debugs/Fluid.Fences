@@ -1,14 +1,14 @@
 using System;
-using System.IO;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 namespace DesktopFences
 {
     public static class ThemeUtility
     {
+        private static readonly Color FallbackColor = Color.FromRgb(36, 61, 111);
         private static Color? _cachedWallpaperColor;
         private static DateTime _cacheTimestamp = DateTime.MinValue;
+        private static double _cacheTtlSeconds = 2.0;
         private static readonly object _cacheLock = new();
         private static readonly object _sampleLock = new();
 
@@ -21,7 +21,7 @@ namespace DesktopFences
         {
             lock (_cacheLock)
             {
-                if (_cachedWallpaperColor.HasValue && (DateTime.UtcNow - _cacheTimestamp).TotalSeconds < 2.0)
+                if (_cachedWallpaperColor.HasValue && (DateTime.UtcNow - _cacheTimestamp).TotalSeconds < _cacheTtlSeconds)
                     return _cachedWallpaperColor.Value;
             }
 
@@ -29,7 +29,7 @@ namespace DesktopFences
             {
                 lock (_cacheLock)
                 {
-                    if (_cachedWallpaperColor.HasValue && (DateTime.UtcNow - _cacheTimestamp).TotalSeconds < 2.0)
+                    if (_cachedWallpaperColor.HasValue && (DateTime.UtcNow - _cacheTimestamp).TotalSeconds < _cacheTtlSeconds)
                         return _cachedWallpaperColor.Value;
                 }
 
@@ -42,25 +42,22 @@ namespace DesktopFences
                               ?? Core.Theming.WallpaperSampler.AverageColorFromSample(sample);
                 }
 
-                Color result = sampled ?? Color.FromRgb(36, 61, 111);
+                Color result = sampled ?? FallbackColor;
 
                 if (sampled is null)
                 {
                     Core.Theming.ThemeLog.Warn("AutoMatch", "Wallpaper unreadable; auto-match falling back to default.");
                 }
-                else
+
+                lock (_cacheLock)
                 {
-                    lock (_cacheLock)
-                    {
-                        _cachedWallpaperColor = result;
-                        _cacheTimestamp = DateTime.UtcNow;
-                    }
+                    _cachedWallpaperColor = result;
+                    _cacheTimestamp = DateTime.UtcNow;
+                    _cacheTtlSeconds = sampled is null ? 5.0 : 2.0;
                 }
 
                 return result;
             }
         }
-
-        public static Color GetWallpaperMediaColor() => GetDominantWallpaperColor();
     }
 }

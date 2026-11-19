@@ -18,8 +18,6 @@
 
     <Window.Resources>
         <local:HexToBrushConverter x:Key="HexToBrush" />
-        <local:EmptyStringToCollapsedConverter x:Key="EmptyToCollapsed" />
-        <local:InverseBooleanConverter x:Key="InverseBool" />
 
         <Thickness x:Key="RowGap">0,0,0,16</Thickness>
         <Thickness x:Key="SectionGap">0,28,0,12</Thickness>
@@ -79,7 +77,7 @@
             </Setter>
         </Style>
 
-        <DrawingBrush x:Key="AlphaCheckerboard" TileMode="Tile" Viewport="0,0,6,6"
+        <DrawingBrush x:Key="AlphaCheckerboard" TileMode="Tile" Viewport="0,0,8,8"
                       ViewportUnits="Absolute" Stretch="None">
             <DrawingBrush.Drawing>
                 <DrawingGroup>
@@ -289,10 +287,6 @@
                     MouseRightButtonUp="ThemeSwatch_RightClick"
                     ToolTip="{Binding Description}"
                     AutomationProperties.Name="{Binding Name}">
-
-                <Border.ContextMenu>
-                    <ContextMenu x:Name="SwatchMenu" />
-                </Border.ContextMenu>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="26" />
@@ -543,8 +537,7 @@
                                         <TextBlock Text="Your fences" FontWeight="SemiBold" Margin="0,0,0,8" />
                                         <ui:ListView x:Name="FenceListBox" AutomationProperties.Name="Your fences" MinHeight="240" MaxHeight="420"
                                                      BorderThickness="0" Background="Transparent"
-                                                     SelectionChanged="FenceListBox_SelectionChanged"
-                                                     PreviewMouseWheel="ThemeGallery_PreviewMouseWheel" />
+                                                     SelectionChanged="FenceListBox_SelectionChanged" />
                                         <TextBlock x:Name="NoFencesHint" Style="{StaticResource FieldLabel}"
                                                    Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"
                                                    Text="No fences yet. Right-click the tray icon to create one." />

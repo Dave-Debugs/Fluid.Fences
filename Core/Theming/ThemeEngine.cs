@@ -1,62 +1,64 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace DesktopFences.Core.Theming
 {
-
     public static class ThemeEngine
     {
-
         public static ThemeDefinition? Current { get; private set; }
 
         public static event EventHandler<ThemeDefinition>? ThemeApplied;
 
         private static DispatcherTimer? _transitionTimer;
+        private static readonly HashSet<string> _appliedCustomTokens = new(StringComparer.Ordinal);
 
-        private static readonly (Func<ThemeColors, string?> Get, string[] Keys)[] ColorMap =
-        {
+        private readonly record struct TokenPair(string ColorKey, string BrushKey);
 
-            (c => c.Primary,             new[] { "CustomPrimaryColor" }),
-            (c => c.PrimaryHover,        new[] { "CustomPrimaryHoverColor" }),
-            (c => c.PrimaryPressed,      new[] { "CustomPrimaryPressedColor" }),
-            (c => c.Secondary,           new[] { "CustomSecondaryColor" }),
-            (c => c.Accent,              new[] { "CustomAccentColor" }),
+        private static readonly (Func<ThemeColors, string?> Get, TokenPair[] Keys)[] ColorMap =
+        [
+            (c => c.Primary,             [Pair("CustomPrimaryColor")]),
+            (c => c.PrimaryHover,        [Pair("CustomPrimaryHoverColor")]),
+            (c => c.PrimaryPressed,      [Pair("CustomPrimaryPressedColor")]),
+            (c => c.Secondary,           [Pair("CustomSecondaryColor")]),
+            (c => c.Accent,              [Pair("CustomAccentColor")]),
 
-            (c => c.Background,          new[] { "CustomBackgroundColor" }),
-            (c => c.Surface,             new[] { "CustomSurfaceColor" }),
-            (c => c.SurfaceSubtle,       new[] { "CustomSurfaceSubtleColor" }),
-            (c => c.SurfaceHover,        new[] { "CustomSurfaceHoverColor" }),
-            (c => c.SurfaceSelected,     new[] { "CustomSurfaceSelectedColor" }),
-            (c => c.Header,              new[] { "CustomHeaderColor" }),
+            (c => c.Background,          [Pair("CustomBackgroundColor")]),
+            (c => c.Surface,             [Pair("CustomSurfaceColor")]),
+            (c => c.SurfaceSubtle,       [Pair("CustomSurfaceSubtleColor")]),
+            (c => c.SurfaceHover,        [Pair("CustomSurfaceHoverColor")]),
+            (c => c.SurfaceSelected,     [Pair("CustomSurfaceSelectedColor")]),
+            (c => c.Header,              [Pair("CustomHeaderColor")]),
 
-            (c => c.Border,              new[] { "CustomBorderColor" }),
-            (c => c.BorderSubtle,        new[] { "CustomBorderSubtleColor" }),
-            (c => c.FocusRing,           new[] { "CustomFocusRingColor" }),
+            (c => c.Border,              [Pair("CustomBorderColor")]),
+            (c => c.BorderSubtle,        [Pair("CustomBorderSubtleColor")]),
+            (c => c.FocusRing,           [Pair("CustomFocusRingColor")]),
 
-            (c => c.TextPrimary,         new[] { "CustomTextPrimaryColor", "CustomFontColor" }),
-            (c => c.TextSecondary,       new[] { "CustomTextSecondaryColor", "CustomSecondaryFontColor" }),
-            (c => c.TextDisabled,        new[] { "CustomTextDisabledColor" }),
-            (c => c.TextOnAccent,        new[] { "CustomTextOnAccentColor" }),
-            (c => c.Glyph,               new[] { "CustomGlyphColor" }),
-            (c => c.GlyphHover,          new[] { "CustomGlyphHoverColor" }),
+            (c => c.TextPrimary,         [Pair("CustomTextPrimaryColor"), Pair("CustomFontColor")]),
+            (c => c.TextSecondary,       [Pair("CustomTextSecondaryColor"), Pair("CustomSecondaryFontColor")]),
+            (c => c.TextDisabled,        [Pair("CustomTextDisabledColor")]),
+            (c => c.TextOnAccent,        [Pair("CustomTextOnAccentColor")]),
+            (c => c.Glyph,               [Pair("CustomGlyphColor")]),
+            (c => c.GlyphHover,          [Pair("CustomGlyphHoverColor")]),
 
-            (c => c.Success,             new[] { "CustomSuccessColor" }),
-            (c => c.Error,               new[] { "CustomErrorColor" }),
-            (c => c.Warning,             new[] { "CustomWarningColor" }),
-            (c => c.Info,                new[] { "CustomInfoColor" }),
+            (c => c.Success,             [Pair("CustomSuccessColor")]),
+            (c => c.Error,               [Pair("CustomErrorColor")]),
+            (c => c.Warning,             [Pair("CustomWarningColor")]),
+            (c => c.Info,                [Pair("CustomInfoColor")]),
 
-            (c => c.SelectionFill,       new[] { "CustomSelectionFillColor" }),
-            (c => c.SelectionStroke,     new[] { "CustomSelectionStrokeColor" }),
-            (c => c.DropTarget,          new[] { "CustomDropTargetColor" }),
-            (c => c.ScrollThumb,         new[] { "CustomScrollThumbColor" }),
-            (c => c.ScrollThumbHover,    new[] { "CustomScrollThumbHoverColor" }),
-            (c => c.ScrollThumbActive,   new[] { "CustomScrollThumbActiveColor" }),
-        };
+            (c => c.SelectionFill,       [Pair("CustomSelectionFillColor")]),
+            (c => c.SelectionStroke,     [Pair("CustomSelectionStrokeColor")]),
+            (c => c.DropTarget,          [Pair("CustomDropTargetColor")]),
+            (c => c.ScrollThumb,         [Pair("CustomScrollThumbColor")]),
+            (c => c.ScrollThumbHover,    [Pair("CustomScrollThumbHoverColor")]),
+            (c => c.ScrollThumbActive,   [Pair("CustomScrollThumbActiveColor")]),
+        ];
+
+        private static TokenPair Pair(string colorKey) =>
+            new(colorKey, string.Concat(colorKey.AsSpan(0, colorKey.Length - 5), "Brush"));
 
         public static void Apply(ThemeDefinition theme, bool animate = false)
         {
@@ -89,11 +91,7 @@ namespace DesktopFences.Core.Theming
 
         public static bool IsReducedMotion()
         {
-            try
-            {
-
-                return !SystemParameters.ClientAreaAnimation;
-            }
+            try { return !SystemParameters.ClientAreaAnimation; }
             catch { return false; }
         }
 
@@ -105,87 +103,105 @@ namespace DesktopFences.Core.Theming
             return TimeSpan.FromMilliseconds(milliseconds * scale);
         }
 
-        private static void SetColorAndBrush(ResourceDictionary res, string colorKey, Color color)
+        private static void SetColorAndBrush(ResourceDictionary res, TokenPair pair, Color color)
         {
-            res[colorKey] = color;
-
-            if (!colorKey.EndsWith("Color", StringComparison.Ordinal)) return;
-            string brushKey = string.Concat(colorKey.AsSpan(0, colorKey.Length - 5), "Brush");
-
+            res[pair.ColorKey] = color;
             var brush = new SolidColorBrush(color);
             brush.Freeze();
-            res[brushKey] = brush;
+            res[pair.BrushKey] = brush;
         }
 
         private static void WriteTokens(ThemeDefinition theme)
         {
             var res = Application.Current.Resources;
             var fallback = ThemeDefinition.Fallback;
+            var colors = theme.Colors ?? fallback.Colors;
+            var shape = theme.Shape ?? fallback.Shape;
+            var typography = theme.Typography ?? fallback.Typography;
+            var motion = theme.Motion ?? fallback.Motion;
 
             foreach (var (get, keys) in ColorMap)
             {
-                string? raw = get(theme.Colors) ?? get(fallback.Colors);
-
+                string? raw = get(colors) ?? get(fallback.Colors);
                 if (string.IsNullOrWhiteSpace(raw)) continue;
-
                 if (!TryParseColor(raw, out Color color)) continue;
 
-                foreach (string key in keys) SetColorAndBrush(res, key, color);
+                foreach (TokenPair pair in keys) SetColorAndBrush(res, pair, color);
             }
 
-            double r = theme.Shape.CornerRadius ?? fallback.Shape.CornerRadius ?? 8.0;
+            WriteNonColorTokens(res, theme, shape, typography, motion, fallback);
+            ApplyBaseTheme(theme);
+        }
+
+        private static void WriteNonColorTokens(
+            ResourceDictionary res,
+            ThemeDefinition theme,
+            ThemeShape shape,
+            ThemeTypography typography,
+            ThemeMotion motion,
+            ThemeDefinition fallback)
+        {
+            double r = shape.CornerRadius ?? fallback.Shape.CornerRadius ?? 8.0;
             res["CustomCornerRadius"] = new CornerRadius(Clamp(r, 0, 32));
 
-            double rs = theme.Shape.CornerRadiusSmall ?? fallback.Shape.CornerRadiusSmall ?? 4.0;
+            double rs = shape.CornerRadiusSmall ?? fallback.Shape.CornerRadiusSmall ?? 4.0;
             res["CustomCornerRadiusSmall"] = new CornerRadius(Clamp(rs, 0, 32));
 
-            double bt = theme.Shape.BorderThickness ?? fallback.Shape.BorderThickness ?? 1.0;
+            double bt = shape.BorderThickness ?? fallback.Shape.BorderThickness ?? 1.0;
             res["CustomBorderThickness"] = Clamp(bt, 0, 8);
 
-            double so = theme.Shape.ShadowOpacity ?? fallback.Shape.ShadowOpacity ?? 0.35;
+            double so = shape.ShadowOpacity ?? fallback.Shape.ShadowOpacity ?? 0.35;
             res["CustomShadowOpacity"] = Clamp(so, 0, 1);
 
-            double sb = theme.Shape.ShadowBlurRadius ?? fallback.Shape.ShadowBlurRadius ?? 16.0;
+            double sb = shape.ShadowBlurRadius ?? fallback.Shape.ShadowBlurRadius ?? 16.0;
             res["CustomShadowBlurRadius"] = Clamp(sb, 0, 64);
 
-            double sd = theme.Shape.ShadowDepth ?? fallback.Shape.ShadowDepth ?? 2.0;
+            double sd = shape.ShadowDepth ?? fallback.Shape.ShadowDepth ?? 2.0;
             res["CustomShadowDepth"] = Clamp(sd, 0, 32);
 
-            string fontFamily = !string.IsNullOrWhiteSpace(theme.Typography.FontFamily)
-                ? theme.Typography.FontFamily!
+            string fontFamily = !string.IsNullOrWhiteSpace(typography.FontFamily)
+                ? typography.FontFamily!
                 : (fallback.Typography.FontFamily ?? "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, Arial");
             try { res["CustomFontFamily"] = new FontFamily(fontFamily); }
             catch { }
 
-            string monoFontFamily = !string.IsNullOrWhiteSpace(theme.Typography.MonospaceFontFamily)
-                ? theme.Typography.MonospaceFontFamily!
+            string monoFontFamily = !string.IsNullOrWhiteSpace(typography.MonospaceFontFamily)
+                ? typography.MonospaceFontFamily!
                 : (fallback.Typography.MonospaceFontFamily ?? "Cascadia Mono, Consolas, Courier New");
             try { res["CustomMonospaceFontFamily"] = new FontFamily(monoFontFamily); }
             catch { }
 
-            double fs = theme.Typography.Scale ?? fallback.Typography.Scale ?? 1.0;
+            double fs = typography.Scale ?? fallback.Typography.Scale ?? 1.0;
             res["CustomFontScale"] = Clamp(fs, 0.8, 1.5);
 
-            res["TitleFontWeight"] = ParseFontWeight(theme.Typography.TitleWeight ?? fallback.Typography.TitleWeight);
+            res["TitleFontWeight"] = ParseFontWeight(typography.TitleWeight ?? fallback.Typography.TitleWeight);
 
-            double ms = theme.Motion.SpeedMultiplier ?? fallback.Motion.SpeedMultiplier ?? 1.0;
+            double ms = motion.SpeedMultiplier ?? fallback.Motion.SpeedMultiplier ?? 1.0;
             res["CustomMotionScale"] = Clamp(ms, 0, 3);
 
-            int tms = theme.Motion.ThemeTransitionMs ?? fallback.Motion.ThemeTransitionMs ?? 180;
+            int tms = motion.ThemeTransitionMs ?? fallback.Motion.ThemeTransitionMs ?? 180;
             res["CustomThemeTransitionMs"] = Math.Max(0, tms);
 
-            res["RollUpStyle"] = theme.Motion.RollUpStyle ?? fallback.Motion.RollUpStyle ?? "Glass";
+            res["RollUpStyle"] = motion.RollUpStyle ?? fallback.Motion.RollUpStyle ?? "Glass";
 
-            foreach (var kv in theme.CustomTokens)
+            foreach (string staleKey in _appliedCustomTokens)
             {
-                if (string.IsNullOrWhiteSpace(kv.Key)) continue;
-                if (!kv.Key.StartsWith("CustomToken.", StringComparison.Ordinal)) continue;
-                if (res.Contains(kv.Key) && res[kv.Key] is not (string or Color)) continue;
-                if (TryParseColor(kv.Value, out Color c)) res[kv.Key] = c;
-                else res[kv.Key] = kv.Value;
+                res.Remove(staleKey);
             }
+            _appliedCustomTokens.Clear();
 
-            ApplyBaseTheme(theme);
+            if (theme.CustomTokens is not null)
+            {
+                foreach (var kv in theme.CustomTokens)
+                {
+                    if (string.IsNullOrWhiteSpace(kv.Key)) continue;
+                    if (!kv.Key.StartsWith("CustomToken.", StringComparison.Ordinal)) continue;
+                    if (res.Contains(kv.Key) && res[kv.Key] is not (string or Color)) continue;
+                    if (TryParseColor(kv.Value, out Color c)) res[kv.Key] = c;
+                    else res[kv.Key] = kv.Value;
+                    _appliedCustomTokens.Add(kv.Key);
+                }
+            }
         }
 
         private static FontWeight ParseFontWeight(string? weight)
@@ -220,7 +236,7 @@ namespace DesktopFences.Core.Theming
                     Wpf.Ui.Appearance.ApplicationThemeManager.Apply(target, updateAccent: false);
                 }
 
-                string? accentRaw = theme.Colors.Accent ?? ThemeDefinition.Fallback.Colors.Accent;
+                string? accentRaw = theme.Colors?.Accent ?? ThemeDefinition.Fallback.Colors.Accent;
                 if (TryParseColor(accentRaw, out Color accent))
                 {
                     Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(accent, target);
@@ -243,18 +259,19 @@ namespace DesktopFences.Core.Theming
             var res = Application.Current.Resources;
             var fallback = ThemeDefinition.Fallback;
             int durationMs = GetTransitionMs(target);
+            var targetColors = target.Colors ?? fallback.Colors;
 
-            var lerps = new List<(string Key, Color From, Color To)>();
+            var lerps = new List<(TokenPair Pair, Color From, Color To)>(32);
             foreach (var (get, keys) in ColorMap)
             {
-                string? raw = get(target.Colors) ?? get(fallback.Colors);
+                string? raw = get(targetColors) ?? get(fallback.Colors);
                 if (string.IsNullOrWhiteSpace(raw)) continue;
                 if (!TryParseColor(raw, out Color to)) continue;
 
-                foreach (string key in keys)
+                foreach (TokenPair pair in keys)
                 {
-                    if (res[key] is Color from && from != to)
-                        lerps.Add((key, from, to));
+                    if (res[pair.ColorKey] is Color from && from != to)
+                        lerps.Add((pair, from, to));
                 }
             }
 
@@ -265,25 +282,33 @@ namespace DesktopFences.Core.Theming
                 return;
             }
 
+            Current = target;
+            WriteNonColorTokens(
+                res,
+                target,
+                target.Shape ?? fallback.Shape,
+                target.Typography ?? fallback.Typography,
+                target.Motion ?? fallback.Motion,
+                fallback);
+            ApplyBaseTheme(target);
+
             var clock = Stopwatch.StartNew();
             _transitionTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
-
                 Interval = TimeSpan.FromMilliseconds(16)
             };
 
-            _transitionTimer.Tick += (s, e) =>
+            _transitionTimer.Tick += (_, _) =>
             {
                 double t = Math.Min(1.0, clock.Elapsed.TotalMilliseconds / durationMs);
                 double eased = EaseOutCubic(t);
 
-                foreach (var (key, from, to) in lerps)
-                    SetColorAndBrush(res, key, LerpColor(from, to, eased));
+                foreach (var (pair, from, to) in lerps)
+                    SetColorAndBrush(res, pair, LerpColor(from, to, eased));
 
                 if (t >= 1.0)
                 {
                     StopTransition();
-
                     WriteTokens(target);
                     Commit(target);
                 }
@@ -328,11 +353,18 @@ namespace DesktopFences.Core.Theming
 
         public static double RelativeLuminance(Color c) => ColorSpace.RelativeLuminance(c);
 
-        public static double ContrastRatio(Color foreground, Color background) => ColorSpace.Contrast(foreground, background);
+        public static double ContrastRatio(Color foreground, Color background)
+        {
+            Color effectiveFg = foreground.A < 255
+                ? ColorSpace.CompositeOver(foreground, background)
+                : foreground;
+            return ColorSpace.Contrast(effectiveFg, background);
+        }
 
         public static IReadOnlyList<string> AuditContrast(ThemeDefinition theme)
         {
             var warnings = new List<string>();
+            if (theme?.Colors is null) return warnings;
 
             Color backdrop = ColorSpace.NeutralBackdrop;
             if (TryParseColor(theme.Colors.Background, out Color bg))

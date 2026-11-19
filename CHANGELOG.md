@@ -5,18 +5,40 @@ All notable changes to Fluid Fences are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-11-19
+
+### Added
+- Upgraded target framework from `.NET 8` (EOL) to `.NET 10` LTS (`net10.0-windows`) and moved the `DesktopFences.Tests` xUnit suite into `tests/DesktopFences.Tests` with CI test runs and isolated `%TEMP%` config sandboxing.
+- Added `ShellLinkParser` for `.lnk` and `.url` files instead of `WScript.Shell` COM calls, preventing STA/MTA deadlocks and closing `.lnk` UNC/NTLM leaks and Folder Portal launch-warning bypasses.
+- Fixed Fence Delete Undo in Settings via deferred deletion (`CommitPendingDeletions`) and deferred theme media cleanup on Theme Delete Undo.
+
+### Changed
+- Removed ~33.5 MB of unused assets (including a 6.11 MB unreferenced PNG embedded inside `FluidFences.dll`) and removed the old `DaveDebugs` updater fallback URL.
+- Replaced `VisualBrush` `OpacityMask` clipping on fence background media with `RectangleGeometry` clipping and added `MediaFailed` error handling.
+- Moved theme archive import/export, Folder Portal reconnect checks, and search filtering off the UI thread; added 100ms search debounce, 200ms media opacity slider debounce, frozen brush caching, bounded LRU icon cache, `FrozenDictionary` theme catalog snapshots, sRGB-to-linear lookup table, and lower-allocation K-means palette extraction.
+- Updated `ConfigStore` so transient I/O errors retry instead of backing up and overwriting user settings; only malformed JSON creates `.corrupt.bak` backups.
+- Routed app and theme logs through a shared thread-safe writer with 2 MB log rotation and `#if DEBUG` gating on verbose WPF trace output.
+- Updated Win32 P/Invokes (`GetWindowLong*`, `SetWindowLong*`, `SHDefExtractIconW`, `SHFileOperationW`, `SystemParametersInfoW`, `SendMessageTimeoutW`) to source-generated `[LibraryImport]`.
+
+### Fixed
+- Restored `Archives` and `Code & Scripts` categories in `AutoOrganizeService` so all 7 categories work again.
+- Prevented `RemoveFileFromVaultAndList` from recycling files stored outside the fence vault, and blocked DOS reserved device names and dotted directory name collisions in `FenceVaultService`.
+- Fixed Updater redirect URI checks (`response.RequestMessage.RequestUri`), `ThemeCatalog` built-in ID shadowing, zip entry size accounting, and delete path containment checks.
+- Fixed mixed-DPI docking and drag coordinates, single-pass `WndProc` monitor snapping, Left-docked rolled-up dragging, `LostMouseCapture` recovery, `Escape` tab tear-off cancellation, `Ctrl+Drag` copy behavior, right-click context menus, and `Ctrl+<Key>` shortcuts inside text boxes.
+- Fixed `ShowSearch`, `Opacity`, `RollUpAnimation`, and `AnimationStyle.None` settings updates, Settings `FenceListBox` wheel scrolling, `AlphaCheckerboard` 8x8 tiling, cross-fence pending color save conflicts, and stale `CustomToken.*` resource cleanup.
+
 ## [2.3.6] - 2026-10-31
 
 ### Added
-- Real-time Windows 11 DWM accent border synchronization in Settings (`DwmSetWindowAttribute` with `DWMWA_BORDER_COLOR`), updating instantly on theme selection without requiring window focus toggles.
-- Auto-Organize pre-flight safety prompt confirming file move operations before sorting desktop files into category fences.
+- Real-time Windows 11 DWM accent border synchronization in Settings (`DwmSetWindowAttribute` with `DWMWA_BORDER_COLOR`), updating immediately when a theme is picked without needing focus changes.
+- Auto-Organize confirmation prompt before moving desktop files into category fences.
 - Unit test coverage for `AutoOrganizeService`, `FenceVaultService`, and `ThemeUtility`.
 
 ### Changed
-- Refined fence resizing hit-targets: expanded outer edge grip bounds to 8 DIPs and corners to 14×14 DIPs for effortless cursor acquisition.
-- Tuned rolled-up fence hover collapse debounce timer to 150ms, eliminating edge flicker during resize motions while keeping unroll transitions crisp.
-- Fixed window-close concurrency deadlocks during shutdown sequence.
-- Resolved wallpaper dominant color sampling contention across multi-monitor setups.
+- Expanded fence resize borders to 8 DIPs and corners to 14x14 DIPs so edges are easier to grab.
+- Set the rolled-up fence hover collapse delay to 150ms to prevent flicker while resizing.
+- Fixed window-close concurrency deadlocks during shutdown.
+- Fixed wallpaper dominant color sampling contention across multi-monitor setups.
 - Cleaned up IDE code-style warnings and added `.editorconfig` rules for clean Visual Studio and CLI builds.
 
 ## [2.3.5] - 2026-10-12
@@ -29,7 +51,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 - Migrated repository, package metadata, built-in theme author credits, installer URLs, and auto-updater endpoints to `Dave-Debugs`.
-- Hardened `ThemeCatalog` import/save path validation, streaming `.fftheme` decompression limits, and `ThemeEngine` custom token allowlists.
+- Added strict `ThemeCatalog` import/save path validation, streaming `.fftheme` decompression limits, and `ThemeEngine` custom token allowlists.
 - Synchronized STA `WScript.Shell` COM access, fixed `Window_Loaded` HWND recreation ordering, cancelled stale Folder Portal watchers on tab switches, and converted `ConfigStore` and `WallpaperSampler` to true async I/O.
 
 ## [2.2.0] - 2026-09-11
@@ -41,7 +63,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Guaranteed 100% WCAG AAA multi-surface readability standards across light, gray, and dark desktop backdrops.
 - Persistent auto-sorting when files are dropped into a fence: dropping new files now preserves and applies the fence's active sort method (`Name`, `Date Modified`, `Size`, `Type`).
 - Active visual checkmarks on the selected sort mode under `View -> Sort By` and icon size under `View -> Icon Size` in fence context menus.
-- Graceful IPC application shutdown mechanism via named event `Local\FluidFences.Exit` and `--exit` command-line switch, coordinated with Inno Setup installer.
+- Clean IPC application shutdown mechanism via named event `Local\FluidFences.Exit` and `--exit` command-line switch, coordinated with Inno Setup installer.
 - Security confirmation dialog before executing scripts or executables (.exe, .msi, .bat, .cmd, .ps1, etc.) from Folder Portals.
 - Architecture-specific 32-bit and 64-bit safe `SHFILEOPSTRUCT` Win32 definitions.
 - Automated backup creation (`.corrupt.bak`) upon encountering malformed or corrupted configuration files.
@@ -71,7 +93,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Fixed thumbnail generation failure caused by improper COM wrapper release on `.NET 8` source-generated interfaces.
 - Fixed cross-thread UI collection mutation in `ThemeCatalog.SaveAsync`.
 - Removed modification of undocumented system Explorer registry keys (`Explorer\Serialize`).
-- Hardened file renaming logic against path traversal attempts.
+- Blocked path traversal attempts in file renaming.
 
 ## [2.0.5] - 2026-08-12
 
@@ -112,7 +134,7 @@ and settings.
 
 ### Fixed
 - Wallpaper sampling on multi-monitor systems and when displays are changed at runtime.
-- Hardened Folder Portals and the underlying file operations against edge cases.
+- Fixed edge cases in Folder Portals and the underlying file operations.
 - The app recovers cleanly from a corrupt or truncated config file instead of failing
   to start.
 - The start-with-Windows entry is repointed correctly after an upgrade or a change of

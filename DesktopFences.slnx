@@ -1,4 +1,4 @@
 <Solution>
   <Project Path="DesktopFences.csproj" />
-  <Project Path="..\DesktopFences.Tests\DesktopFences.Tests.csproj" />
+  <Project Path="tests\DesktopFences.Tests\DesktopFences.Tests.csproj" />
 </Solution>

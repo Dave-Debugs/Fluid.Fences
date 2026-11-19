@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -28,11 +29,7 @@ namespace DesktopFences
             catch { return "0.0.0"; }
         }
 
-        private static readonly string[] GitHubApiUrls =
-        [
-            "https://api.github.com/repos/Dave-Debugs/Fluid.Fences/releases/latest",
-            "https://api.github.com/repos/DaveDebugs/Fluid.Fences/releases/latest"
-        ];
+        private const string LatestReleaseApiUrl = "https://api.github.com/repos/Dave-Debugs/Fluid.Fences/releases/latest";
 
         [GeneratedRegex("^[A-Fa-f0-9]{64}$")]
         private static partial Regex Sha256HexRegex();
@@ -65,22 +62,8 @@ namespace DesktopFences
 
         private static async Task<GitHubRelease?> FetchLatestReleaseAsync()
         {
-            Exception? lastError = null;
-            foreach (string url in GitHubApiUrls)
-            {
-                try
-                {
-                    var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(url);
-                    if (release is not null && !string.IsNullOrEmpty(release.TagName))
-                        return release;
-                }
-                catch (Exception ex)
-                {
-                    lastError = ex;
-                }
-            }
-            if (lastError is not null) throw lastError;
-            return null;
+            var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(LatestReleaseApiUrl);
+            return release is not null && !string.IsNullOrEmpty(release.TagName) ? release : null;
         }
 
         public static async Task CheckAndApplyUpdateAsync(bool silentCheck = true)
@@ -127,10 +110,16 @@ namespace DesktopFences
             }
         }
 
-        private static bool IsTrustedDownloadUri(string url)
+        internal static bool IsTrustedDownloadUri(string? url)
         {
+            if (string.IsNullOrWhiteSpace(url)) return false;
             if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return false;
-            if (uri.Scheme != Uri.UriSchemeHttps) return false;
+            return IsTrustedDownloadUri(uri);
+        }
+
+        internal static bool IsTrustedDownloadUri(Uri? uri)
+        {
+            if (uri is null || uri.Scheme != Uri.UriSchemeHttps) return false;
             return uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
                    uri.Host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase) ||
                    uri.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
@@ -146,7 +135,7 @@ namespace DesktopFences
 
             foreach (var line in nonEmptyLines)
             {
-                string trimmed = line.Trim();
+                ReadOnlySpan<char> trimmed = line.AsSpan().Trim();
 
                 if (trimmed.StartsWith("SHA256", StringComparison.OrdinalIgnoreCase))
                 {
@@ -156,19 +145,20 @@ namespace DesktopFences
 
                     if (openParen >= 0 && closeParen > openParen && eqIdx > closeParen)
                     {
-                        string insideParens = trimmed.Substring(openParen + 1, closeParen - openParen - 1).Trim();
-                        string parsedFileName = Path.GetFileName(insideParens);
+                        ReadOnlySpan<char> insideParens = trimmed.Slice(openParen + 1, closeParen - openParen - 1).Trim();
+                        string parsedFileName = Path.GetFileName(insideParens.ToString());
 
                         if (string.Equals(parsedFileName, targetFile, StringComparison.OrdinalIgnoreCase))
                         {
-                            string hashCandidate = trimmed.Substring(eqIdx + 1).Trim();
+                            ReadOnlySpan<char> hashCandidate = trimmed[(eqIdx + 1)..].Trim();
                             if (Sha256HexRegex().IsMatch(hashCandidate))
-                                return hashCandidate.ToUpperInvariant();
+                                return hashCandidate.ToString().ToUpperInvariant();
                         }
                     }
                 }
 
-                var parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                string trimmedStr = trimmed.ToString();
+                var parts = trimmedStr.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 2 && Sha256HexRegex().IsMatch(parts[0]))
                 {
                     string filePart = string.Join(" ", parts.Skip(1)).TrimStart('*', ' ');
@@ -204,7 +194,19 @@ namespace DesktopFences
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
-                string checksumContent = await _httpClient.GetStringAsync(checksumUrl, cts.Token);
+                string checksumContent;
+                using (var checksumResponse = await _httpClient.GetAsync(checksumUrl, cts.Token))
+                {
+                    checksumResponse.EnsureSuccessStatusCode();
+                    if (!IsTrustedDownloadUri(checksumResponse.RequestMessage?.RequestUri))
+                    {
+                        MessageBox.Show("Security Alert: Untrusted redirect detected while downloading checksum. Aborting update.",
+                                        "Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+                    checksumContent = await checksumResponse.Content.ReadAsStringAsync(cts.Token);
+                }
+
                 string expectedHash = ParseExpectedHash(checksumContent, assetName);
 
                 if (string.IsNullOrEmpty(expectedHash))
@@ -214,35 +216,47 @@ namespace DesktopFences
                     return;
                 }
 
+                bool verified = false;
                 using (var response = await _httpClient.GetAsync(installerUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token))
                 {
                     response.EnsureSuccessStatusCode();
-
-                    await using (var netStream = await response.Content.ReadAsStreamAsync(cts.Token))
-                    await using (var fileStream = new FileStream(installerPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
-                    using (var sha256 = SHA256.Create())
+                    if (!IsTrustedDownloadUri(response.RequestMessage?.RequestUri))
                     {
-                        byte[] buffer = new byte[81920];
+                        MessageBox.Show("Security Alert: Untrusted redirect detected while downloading update. Aborting update.",
+                                        "Security Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+                    try
+                    {
+                        await using var netStream = await response.Content.ReadAsStreamAsync(cts.Token);
+                        await using var fileStream = new FileStream(installerPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+                        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
                         int bytesRead;
-                        while ((bytesRead = await netStream.ReadAsync(buffer, cts.Token)) > 0)
+                        while ((bytesRead = await netStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cts.Token)) > 0)
                         {
                             await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cts.Token);
-                            sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+                            hasher.AppendData(buffer, 0, bytesRead);
                         }
-                        sha256.TransformFinalBlock([], 0, 0);
 
-                        string actualHash = Convert.ToHexString(sha256.Hash!).ToUpperInvariant();
-
-                        if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
-                        {
-                            await fileStream.DisposeAsync();
-                            TryDelete(installerPath);
-                            MessageBox.Show(
-                                "Security Alert: The downloaded update was corrupted or tampered with. The update has been aborted.",
-                                "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-                            return;
-                        }
+                        string actualHash = Convert.ToHexString(hasher.GetHashAndReset());
+                        verified = string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase);
                     }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(buffer);
+                    }
+                }
+
+                if (!verified)
+                {
+                    TryDelete(installerPath);
+                    MessageBox.Show(
+                        "Security Alert: The downloaded update was corrupted or tampered with. The update has been aborted.",
+                        "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
                 }
 
                 ProcessStartInfo psi = new(installerPath)
@@ -254,7 +268,7 @@ namespace DesktopFences
 
                 try
                 {
-                    var proc = Process.Start(psi);
+                    using var proc = Process.Start(psi);
                     if (proc != null)
                     {
                         Application.Current.Shutdown();

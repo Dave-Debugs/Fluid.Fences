@@ -183,21 +183,17 @@
             </Grid.ColumnDefinitions>
 
             <Grid
+                x:Name="BackgroundMediaHost"
                 Grid.Row="0"
                 Grid.RowSpan="3"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
                 IsHitTestVisible="False"
+                SizeChanged="BackgroundMediaHost_SizeChanged"
                 Visibility="{Binding Visibility, ElementName=BackgroundMedia}">
-                <Grid.OpacityMask>
-                    <VisualBrush>
-                        <VisualBrush.Visual>
-                            <Border Background="White" CornerRadius="{DynamicResource CustomCornerRadius}"
-                                    Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                    Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Grid}}" />
-                        </VisualBrush.Visual>
-                    </VisualBrush>
-                </Grid.OpacityMask>
+                <Grid.Clip>
+                    <RectangleGeometry x:Name="BackgroundMediaClip" RadiusX="8" RadiusY="8" />
+                </Grid.Clip>
                 <MediaElement
                     x:Name="BackgroundMedia"
                     LoadedBehavior="Manual"
@@ -205,6 +201,7 @@
                     Stretch="UniformToFill"
                     IsMuted="True"
                     MediaEnded="BackgroundMedia_MediaEnded"
+                    MediaFailed="BackgroundMedia_MediaFailed"
                     Visibility="Collapsed" />
             </Grid>
 
@@ -219,7 +216,8 @@
                 Cursor="Hand"
                 MouseLeftButtonDown="Header_MouseLeftButtonDown"
                 MouseLeftButtonUp="Header_MouseLeftButtonUp"
-                MouseMove="Header_MouseMove">
+                MouseMove="Header_MouseMove"
+                LostMouseCapture="Header_LostMouseCapture">
 
                 <Border.ContextMenu>
                     <ContextMenu x:Name="HeaderContextMenu">
@@ -419,7 +417,8 @@
                             Background="Transparent"
                             MouseLeftButtonDown="IconPanel_MouseLeftButtonDown"
                             MouseLeftButtonUp="IconPanel_MouseLeftButtonUp"
-                            MouseMove="IconPanel_MouseMove" />
+                            MouseMove="IconPanel_MouseMove"
+                            LostMouseCapture="IconPanel_LostMouseCapture" />
                     </Grid>
                 </ScrollViewer>
             </Grid>

@@ -1,15 +1,17 @@
 using Microsoft.Win32;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace DesktopFences
 {
@@ -27,23 +29,54 @@ namespace DesktopFences
         private MainWindow? _currentlySelectedFence;
         private bool _isLoadingFenceData;
         private bool _isColorInitializing;
+        private bool _suppressMediaSliderAutoSave;
+        private bool _isGeneratingTheme;
+        private bool? _lastSavedStartupEnabled;
+        private IntPtr _windowHandle;
+        private int? _lastAppliedBorderColorRef;
 
-        private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
-
-        private readonly System.Windows.Threading.DispatcherTimer _liveUpdateTimer = new();
+        private readonly DispatcherTimer _liveUpdateTimer = new();
+        private readonly DispatcherTimer _mediaOpacityTimer = new();
         private Color _pendingColor;
         private double _pendingOpacity;
         private bool _hasPendingColor;
         private bool _pendingColorIsCustom;
 
+        private Action? _pendingCommitAction;
+
+        private static readonly ConcurrentDictionary<string, string?> LoopResolveCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly CubicEase TabEaseOut = CreateFrozenCubicEase();
+        private readonly Dictionary<string, FrameworkElement?> _pages;
+
+        private static CubicEase CreateFrozenCubicEase()
+        {
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            ease.Freeze();
+            return ease;
+        }
+
         public SettingsWindow(MainWindow? callingFence, bool isFirstRun = false)
         {
             InitializeComponent();
             _callingFence = callingFence;
+
+            _pages = new Dictionary<string, FrameworkElement?>(StringComparer.Ordinal)
+            {
+                ["AboutGrid"] = AboutGrid,
+                ["HowToGrid"] = HowToGrid,
+                ["GeneralGrid"] = GeneralGrid,
+                ["FencesGrid"] = FencesGrid,
+                ["ThemeEditorGrid"] = ThemeEditorGrid,
+                ["FeedbackGrid"] = FeedbackGrid,
+            };
+
             Loaded += (_, _) =>
             {
-                Core.Theming.WallpaperSampler.ExcludedWindowHandle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                _windowHandle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                Core.Theming.WallpaperSampler.ExcludedWindowHandle = _windowHandle;
                 UpdateWindowBorderColor();
+                if (_currentTag == "AboutGrid")
+                    StartHomeLogoAnimation();
             };
 
             PresetDropdown.SelectedIndex = 0;
@@ -55,16 +88,29 @@ namespace DesktopFences
             RefreshStats();
             SwitchToTab("AboutGrid");
 
-            _statusTimer.Tick += (_, _) => HideStatus();
+            _statusTimer.Tick += (_, _) => HideStatus(commitPending: true);
 
             Core.Theming.ThemeEngine.ThemeApplied += OnThemeApplied;
 
-            StartHomeLogoAnimation();
+            if (HomeLogoAnim is not null)
+            {
+                HomeLogoAnim.MediaOpened += (_, _) =>
+                {
+                    if (_currentTag != "AboutGrid" || Core.Theming.ThemeEngine.IsReducedMotion())
+                    {
+                        try { HomeLogoAnim.Pause(); } catch { }
+                    }
+                };
+                HomeLogoAnim.MediaFailed += (_, _) =>
+                {
+                    try { HomeLogoAnim.Stop(); HomeLogoAnim.Close(); HomeLogoAnim.Source = null; } catch { }
+                };
+            }
+
             WireVersionEasterEgg();
 
             if (isFirstRun)
             {
-
                 AboutDescriptionText.Text =
                     "Welcome. Right-click the Fluid Fences icon in your system tray to create your first fence, " +
                     "then drag anything you like into it. Ctrl+Alt+Z hides them all when you need a clean desktop.";
@@ -75,27 +121,38 @@ namespace DesktopFences
             _ = LoadGlobalSettingsAsync();
 
             _liveUpdateTimer.Interval = TimeSpan.FromMilliseconds(33);
-            _liveUpdateTimer.Tick += (s, e) =>
+            _liveUpdateTimer.Tick += (_, _) =>
             {
-                if (_hasPendingColor && _currentlySelectedFence is not null)
-                {
-                    if (_pendingColorIsCustom || _currentlySelectedFence.ColorSource == FenceColorSource.Custom)
-                    {
-                        _currentlySelectedFence.SetFenceColor(_pendingColor, _pendingOpacity);
-                        _pendingColorIsCustom = false;
-                        UpdateColorSourceCard();
-                    }
-                    else
-                    {
-                        _currentlySelectedFence.SetFenceOpacity(_pendingOpacity);
-                    }
-                    _hasPendingColor = false;
-                }
-                else
+                if (!FlushPendingColor())
                 {
                     _liveUpdateTimer.Stop();
                 }
             };
+
+            _mediaOpacityTimer.Interval = TimeSpan.FromMilliseconds(200);
+            _mediaOpacityTimer.Tick += (_, _) =>
+            {
+                _mediaOpacityTimer.Stop();
+                _ = AutoSaveGlobalAsync();
+            };
+        }
+
+        private bool FlushPendingColor()
+        {
+            if (!_hasPendingColor || _currentlySelectedFence is null) return false;
+
+            if (_pendingColorIsCustom || _currentlySelectedFence.ColorSource == FenceColorSource.Custom)
+            {
+                _currentlySelectedFence.SetFenceColor(_pendingColor, _pendingOpacity);
+                _pendingColorIsCustom = false;
+                UpdateColorSourceCard();
+            }
+            else
+            {
+                _currentlySelectedFence.SetFenceOpacity(_pendingOpacity);
+            }
+            _hasPendingColor = false;
+            return true;
         }
 
         private string _themeCategoryMode = "All";
@@ -113,9 +170,9 @@ namespace DesktopFences
                 {
                     string f = filter.Trim();
                     items = items.Where(t =>
-                        t.Name.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-                        t.Category.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-                        t.BaseTheme.Contains(f, StringComparison.OrdinalIgnoreCase));
+                        (t.Name ?? "").Contains(f, StringComparison.OrdinalIgnoreCase) ||
+                        (t.Category ?? "").Contains(f, StringComparison.OrdinalIgnoreCase) ||
+                        (t.BaseTheme ?? "").Contains(f, StringComparison.OrdinalIgnoreCase));
                 }
 
                 var allList = items.ToList();
@@ -145,9 +202,7 @@ namespace DesktopFences
                 UpdateThemeTabStyles();
                 ApplyThemeCategoryVisibility();
 
-                Dispatcher.BeginInvoke(new Action(HighlightActiveSwatch),
-                    System.Windows.Threading.DispatcherPriority.Loaded);
-                UpdateContrastReadout();
+                Dispatcher.BeginInvoke(new Action(HighlightActiveSwatch), DispatcherPriority.Loaded);
             }
             catch (Exception ex) { LogError("LoadThemeCatalog", ex); }
         }
@@ -248,6 +303,11 @@ namespace DesktopFences
 
         private async void GenerateTheme_Click(object sender, RoutedEventArgs e)
         {
+            if (_isGeneratingTheme) return;
+            _isGeneratingTheme = true;
+            var triggerButton = sender as UIElement;
+            if (triggerButton is not null) triggerButton.IsEnabled = false;
+
             try
             {
                 bool dark = !string.Equals(
@@ -257,18 +317,20 @@ namespace DesktopFences
                 var ourWindows = Application.Current.Windows.OfType<Window>()
                                     .Where(w => w.Visibility == Visibility.Visible).ToList();
 
-                ShowStatus("Reading your desktop\u2026", StatusKind.Info);
-                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+                ShowStatus("Reading your desktop...", StatusKind.Info);
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
 
-                foreach (var w in ourWindows) w.Visibility = Visibility.Hidden;
+                foreach (var w in ourWindows)
+                {
+                    try { w.Visibility = Visibility.Hidden; } catch { }
+                }
 
-                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
-                await System.Threading.Tasks.Task.Delay(220);
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+                await Task.Delay(220);
 
                 (Core.Theming.ThemeDefinition? generated, Core.Theming.WallpaperSource source, string? problem) result;
                 try
                 {
-
                     uint? monitor = ResolveCurrentMonitorIndex();
                     Rect? region = ResolveCurrentMonitorBounds();
 
@@ -277,8 +339,16 @@ namespace DesktopFences
                 }
                 finally
                 {
-                    foreach (var w in ourWindows) w.Visibility = Visibility.Visible;
-                    Activate();
+                    foreach (var w in ourWindows)
+                    {
+                        try
+                        {
+                            if (PresentationSource.FromVisual(w) is not null)
+                                w.Visibility = Visibility.Visible;
+                        }
+                        catch { }
+                    }
+                    try { Activate(); } catch { }
                 }
 
                 var (generated, source, problem) = result;
@@ -295,6 +365,7 @@ namespace DesktopFences
                     generated,
                     overwriteId: Core.Theming.ThemeGenerator.GeneratedThemeId);
 
+                LoopResolveCache.Clear();
                 string? loop = ResolveThemeLoop(saved);
                 App.SetTheme(saved.Id, animate: true, mediaPath: loop,
                              mediaOpacity: MediaOpacitySlider.Value / 100.0);
@@ -305,7 +376,7 @@ namespace DesktopFences
 
                 string how = source switch
                 {
-                    Core.Theming.WallpaperSource.StaticFile   => "from your wallpaper image",
+                    Core.Theming.WallpaperSource.StaticFile => "from your wallpaper image",
                     Core.Theming.WallpaperSource.DesktopLayer => "from your live desktop",
                     _ => "from your desktop"
                 };
@@ -321,6 +392,11 @@ namespace DesktopFences
             {
                 LogError("GenerateTheme", ex);
                 ShowStatus("Theme generation failed. See app_error.log for details.", StatusKind.Error);
+            }
+            finally
+            {
+                _isGeneratingTheme = false;
+                if (triggerButton is not null) triggerButton.IsEnabled = true;
             }
         }
 
@@ -339,7 +415,7 @@ namespace DesktopFences
             apply.Click += (_, _) => ApplyThemeById(theme.Id);
             menu.Items.Add(apply);
 
-            var export = new MenuItem { Header = "Export\u2026" };
+            var export = new MenuItem { Header = "Export..." };
             export.Click += async (_, _) => await ExportThemeAsync(theme);
             menu.Items.Add(export);
 
@@ -351,7 +427,7 @@ namespace DesktopFences
             }
             else
             {
-                var delete = new MenuItem { Header = $"Delete \u201c{theme.Name}\u201d" };
+                var delete = new MenuItem { Header = $"Delete '{theme.Name}'" };
                 delete.SetResourceReference(MenuItem.ForegroundProperty, "CustomErrorBrush");
                 delete.Click += (_, _) => DeleteTheme(theme);
                 menu.Items.Add(delete);
@@ -365,29 +441,37 @@ namespace DesktopFences
         {
             if (theme.IsBuiltIn) return;
 
+            CommitPendingDeletions();
+
             var snapshot = Core.Theming.ThemeCatalog.Clone(theme);
             bool wasActive = string.Equals(theme.Id, App.ActiveThemeId, StringComparison.OrdinalIgnoreCase);
 
             if (wasActive)
                 App.SetTheme(Core.Theming.ThemeCatalog.Default.Id, animate: true);
 
-            if (!Core.Theming.ThemeCatalog.Delete(theme))
+            if (!Core.Theming.ThemeCatalog.Delete(theme, deleteMedia: false))
             {
-                ShowStatus($"Could not delete \u201c{theme.Name}\u201d.", StatusKind.Error);
+                ShowStatus($"Could not delete '{theme.Name}'.", StatusKind.Error);
                 return;
             }
 
+            LoopResolveCache.Clear();
             LoadThemeCatalog(ThemeFilter.Text);
             RefreshStats();
 
-            ShowStatus($"Deleted \u201c{theme.Name}\u201d.", StatusKind.Success, undo: () =>
-            {
-                var restored = Core.Theming.ThemeCatalog.Save(snapshot, overwriteId: snapshot.Id);
-                if (wasActive) App.SetTheme(restored.Id, animate: true);
-                LoadThemeCatalog(ThemeFilter.Text);
-                RefreshStats();
-                ShowStatus($"Restored \u201c{restored.Name}\u201d.", StatusKind.Success);
-            });
+            ShowStatus(
+                $"Deleted '{theme.Name}'.",
+                StatusKind.Success,
+                undo: () =>
+                {
+                    var restored = Core.Theming.ThemeCatalog.Save(snapshot, overwriteId: snapshot.Id);
+                    LoopResolveCache.Clear();
+                    if (wasActive) App.SetTheme(restored.Id, animate: true);
+                    LoadThemeCatalog(ThemeFilter.Text);
+                    RefreshStats();
+                    ShowStatus($"Restored '{restored.Name}'.", StatusKind.Success);
+                },
+                onCommit: () => Core.Theming.ThemeCatalog.DeleteThemeMediaFiles(snapshot.Id));
         }
 
         private void ApplyThemeById(string id)
@@ -397,8 +481,16 @@ namespace DesktopFences
 
             if (loop is not null)
             {
-                MediaFilePathInput.Text = loop;
-                if (MediaOpacitySlider.Value <= 0) MediaOpacitySlider.Value = 85;
+                _suppressMediaSliderAutoSave = true;
+                try
+                {
+                    MediaFilePathInput.Text = loop;
+                    if (MediaOpacitySlider.Value <= 0) MediaOpacitySlider.Value = 85;
+                }
+                finally
+                {
+                    _suppressMediaSliderAutoSave = false;
+                }
             }
 
             App.SetTheme(theme.Id, animate: true, mediaPath: loop,
@@ -443,10 +535,12 @@ namespace DesktopFences
             {
                 if (Environment.OSVersion.Version.Build < 22000) return;
 
-                var helper = new System.Windows.Interop.WindowInteropHelper(this);
-                IntPtr hwnd = helper.Handle;
+                IntPtr hwnd = _windowHandle != IntPtr.Zero
+                    ? _windowHandle
+                    : new System.Windows.Interop.WindowInteropHelper(this).Handle;
                 if (hwnd == IntPtr.Zero) return;
 
+                int colorRef;
                 if (Wpf.Ui.Appearance.ApplicationAccentColorManager.IsAccentColorOnTitleBarsEnabled)
                 {
                     Color accent = Wpf.Ui.Appearance.ApplicationAccentColorManager.SystemAccent;
@@ -455,20 +549,27 @@ namespace DesktopFences
                     {
                         accent = parsedAccent;
                     }
-
-                    int colorRef = (accent.B << 16) | (accent.G << 8) | accent.R;
-                    NativeMethods.DwmSetWindowAttribute(
-                        hwnd,
-                        (int)NativeMethods.DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR,
-                        ref colorRef,
-                        sizeof(int));
-
-                    NativeMethods.SetWindowPos(
-                        hwnd,
-                        IntPtr.Zero,
-                        0, 0, 0, 0,
-                        NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_FRAMECHANGED);
+                    colorRef = (accent.B << 16) | (accent.G << 8) | accent.R;
                 }
+                else
+                {
+                    colorRef = NativeMethods.DWMWA_COLOR_DEFAULT;
+                }
+
+                if (_lastAppliedBorderColorRef == colorRef) return;
+                _lastAppliedBorderColorRef = colorRef;
+
+                NativeMethods.DwmSetWindowAttribute(
+                    hwnd,
+                    (int)NativeMethods.DWMWINDOWATTRIBUTE.DWMWA_BORDER_COLOR,
+                    ref colorRef,
+                    sizeof(int));
+
+                NativeMethods.SetWindowPos(
+                    hwnd,
+                    IntPtr.Zero,
+                    0, 0, 0, 0,
+                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_FRAMECHANGED);
             }
             catch (Exception ex)
             {
@@ -515,7 +616,6 @@ namespace DesktopFences
         {
             try
             {
-
                 var theme = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId);
                 var warnings = Core.Theming.ThemeEngine.AuditContrast(theme);
 
@@ -532,7 +632,7 @@ namespace DesktopFences
         {
             try
             {
-                var dlg = new Microsoft.Win32.OpenFileDialog
+                var dlg = new OpenFileDialog
                 {
                     Title = "Import theme",
                     Filter = "Fluid Fences themes (*.fftheme;*.json)|*.fftheme;*.json|All files (*.*)|*.*"
@@ -542,10 +642,14 @@ namespace DesktopFences
                 var imported = await Core.Theming.ThemeCatalog.ImportAsync(dlg.FileName);
                 if (imported is null)
                 {
-                    ShowStatus("That file could not be read as a theme.", StatusKind.Error);
+                    string reason = !string.IsNullOrWhiteSpace(Core.Theming.ThemeCatalog.LastImportProblem)
+                        ? Core.Theming.ThemeCatalog.LastImportProblem!
+                        : "That file could not be read as a theme.";
+                    ShowStatus(reason, StatusKind.Error);
                     return;
                 }
 
+                LoopResolveCache.Clear();
                 LoadThemeCatalog(ThemeFilter.Text);
                 RefreshStats();
                 ShowStatus($"Imported '{imported.Name}'.", StatusKind.Success);
@@ -563,9 +667,9 @@ namespace DesktopFences
             await ExportThemeAsync(theme);
         }
 
-        private async System.Threading.Tasks.Task ExportThemeAsync(Core.Theming.ThemeDefinition theme)
+        private async Task ExportThemeAsync(Core.Theming.ThemeDefinition theme)
         {
-            var dlg = new Microsoft.Win32.SaveFileDialog
+            var dlg = new SaveFileDialog
             {
                 Title = "Export theme",
                 FileName = theme.Id + Core.Theming.ThemeCatalog.ThemePackageExtension,
@@ -575,7 +679,20 @@ namespace DesktopFences
 
             try
             {
-                string? media = System.IO.File.Exists(MediaFilePathInput.Text) ? MediaFilePathInput.Text : null;
+                string? media = null;
+                if (string.Equals(theme.Id, App.ActiveThemeId, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(MediaFilePathInput.Text)
+                    && File.Exists(MediaFilePathInput.Text))
+                {
+                    media = MediaFilePathInput.Text;
+                }
+                else
+                {
+                    string? resolved = ResolveThemeLoop(theme);
+                    if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
+                        media = resolved;
+                }
+
                 await Core.Theming.ThemeCatalog.ExportAsync(theme, dlg.FileName, media);
                 ShowStatus($"Exported '{theme.Name}'.", StatusKind.Success);
             }
@@ -591,12 +708,34 @@ namespace DesktopFences
             App.LogError($"Settings_{context}", ex);
         }
 
+        public void CommitPendingDeletions()
+        {
+            var commit = _pendingCommitAction;
+            _pendingCommitAction = null;
+            if (commit is null) return;
+
+            try { commit.Invoke(); }
+            catch (Exception ex) { LogError("CommitPendingDeletions", ex); }
+        }
+
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            FlushPendingColor();
             SaveCurrentFenceSettings();
+            if (_mediaOpacityTimer.IsEnabled)
+            {
+                _mediaOpacityTimer.Stop();
+                _ = SaveGlobalSettingsCoreAsync(showSavedStatus: false);
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            CommitPendingDeletions();
 
             _statusTimer.Stop();
             _liveUpdateTimer.Stop();
+            _mediaOpacityTimer.Stop();
 
             try
             {
@@ -609,35 +748,22 @@ namespace DesktopFences
             }
             catch { }
 
-            foreach (Window w in Application.Current.Windows)
+            if (Application.Current is not null)
             {
-                if (w is MainWindow fence && fence.GetIsRolledUp() && !fence.IsMouseOver)
+                foreach (Window w in Application.Current.Windows)
                 {
-                    fence.DismissTemporaryReveal();
+                    if (w is MainWindow fence && fence.GetIsRolledUp() && !fence.IsMouseOver)
+                    {
+                        fence.DismissTemporaryReveal();
+                    }
                 }
             }
 
             Core.Theming.ThemeEngine.ThemeApplied -= OnThemeApplied;
-            Core.Theming.WallpaperSampler.ExcludedWindowHandle = IntPtr.Zero;
-        }
+            if (_windowHandle != IntPtr.Zero)
+                Core.Theming.WallpaperSampler.ClearExcludedWindowHandleIfMatches(_windowHandle);
 
-        private static void RgbToHsl(Color rgb, out double h, out double s, out double l)
-        {
-            double r = rgb.R / 255.0; double g = rgb.G / 255.0; double b = rgb.B / 255.0;
-            double max = Math.Max(r, Math.Max(g, b)); double min = Math.Min(r, Math.Min(g, b));
-            l = (max + min) / 2.0;
-
-            if (max == min) { h = s = 0; }
-            else
-            {
-                double d = max - min;
-                s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
-                if (max == r) h = (g - b) / d + (g < b ? 6 : 0);
-                else if (max == g) h = (b - r) / d + 2;
-                else h = (r - g) / d + 4;
-                h /= 6;
-            }
-            h *= 360; s *= 100; l *= 100;
+            base.OnClosed(e);
         }
 
         private static Color HslToRgb(double h, double s, double l)
@@ -646,14 +772,29 @@ namespace DesktopFences
             if (s == 0) { r = g = b = l; }
             else
             {
-                static double Hue2Rgb(double p, double q, double t) { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6.0) return p + (q - p) * 6 * t; if (t < 1 / 2.0) return q; if (t < 2 / 3.0) return p + (q - p) * (2 / 3.0 - t) * 6; return p; }
-                double q = l < 0.5 ? l * (1 + s) : l + s - l * s; double p = 2 * l - q; h /= 360;
-                r = Hue2Rgb(p, q, h + 1 / 3.0); g = Hue2Rgb(p, q, h); b = Hue2Rgb(p, q, h - 1 / 3.0);
+                static double Hue2Rgb(double p, double q, double t)
+                {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1 / 6.0) return p + (q - p) * 6 * t;
+                    if (t < 1 / 2.0) return q;
+                    if (t < 2 / 3.0) return p + (q - p) * (2 / 3.0 - t) * 6;
+                    return p;
+                }
+                double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                double p = 2 * l - q;
+                h /= 360;
+                r = Hue2Rgb(p, q, h + 1 / 3.0);
+                g = Hue2Rgb(p, q, h);
+                b = Hue2Rgb(p, q, h - 1 / 3.0);
             }
-            return Color.FromRgb((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
+            return Color.FromRgb(
+                (byte)Math.Round(Math.Clamp(r * 255.0, 0.0, 255.0)),
+                (byte)Math.Round(Math.Clamp(g * 255.0, 0.0, 255.0)),
+                (byte)Math.Round(Math.Clamp(b * 255.0, 0.0, 255.0)));
         }
 
-        private async System.Threading.Tasks.Task LoadGlobalSettingsAsync()
+        private async Task LoadGlobalSettingsAsync()
         {
             try
             {
@@ -667,14 +808,17 @@ namespace DesktopFences
 
                     if (config.Theme != null)
                     {
-                        MediaFilePathInput.Text = config.Theme.BackgroundMediaPath;
-                        MediaOpacitySlider.Value = config.Theme.MediaOpacity * 100.0;
-                        AnimationDropdown.SelectedIndex = (int)config.Theme.RollUpAnimation;
-
-                        var active = Core.Theming.ThemeCatalog.Get(
-                            !string.IsNullOrWhiteSpace(config.ThemeId) ? config.ThemeId : config.Theme.ThemeName);
-
-                        _ = active;
+                        _suppressMediaSliderAutoSave = true;
+                        try
+                        {
+                            MediaFilePathInput.Text = config.Theme.BackgroundMediaPath;
+                            MediaOpacitySlider.Value = config.Theme.MediaOpacity * 100.0;
+                            AnimationDropdown.SelectedIndex = Math.Clamp((int)config.Theme.RollUpAnimation, 0, Math.Max(0, AnimationDropdown.Items.Count - 1));
+                        }
+                        finally
+                        {
+                            _suppressMediaSliderAutoSave = false;
+                        }
                     }
                 }
             }
@@ -683,19 +827,16 @@ namespace DesktopFences
             try
             {
                 using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", false);
-                StartupToggle.IsChecked = key?.GetValue("FluidFences") is not null;
+                bool enabled = key?.GetValue("FluidFences") is not null;
+                StartupToggle.IsChecked = enabled;
+                _lastSavedStartupEnabled = enabled;
             }
             catch (Exception ex) { LogError("ReadRegistry", ex); }
 
             ArmAutoSave();
         }
 
-        private async void SaveGlobalSettings_Click(object sender, RoutedEventArgs e)
-        {
-            await SaveGlobalSettingsCoreAsync(showSavedStatus: false);
-        }
-
-        private async System.Threading.Tasks.Task SaveGlobalSettingsCoreAsync(bool showSavedStatus)
+        private async Task SaveGlobalSettingsCoreAsync(bool showSavedStatus)
         {
             try
             {
@@ -703,65 +844,76 @@ namespace DesktopFences
                 bool restoreFiles = RestoreFilesToggle.IsChecked ?? true;
                 bool ghostMode = GhostModeToggle.IsChecked ?? false;
                 bool pauseMedia = PauseMediaToggle.IsChecked ?? true;
+                int animIdx = AnimationDropdown.SelectedIndex >= 0 ? AnimationDropdown.SelectedIndex : 0;
 
                 var selectedTheme = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId);
 
                 Core.ThemeSettings newTheme = new()
                 {
                     ThemeName = selectedTheme.Name,
-                    RollUpAnimation = (Core.AnimationStyle)AnimationDropdown.SelectedIndex,
+                    RollUpAnimation = (Core.AnimationStyle)animIdx,
                     BackgroundMediaPath = MediaFilePathInput.Text,
-                    MediaOpacity = MediaOpacitySlider.Value / 100.0
+                    MediaOpacity = MediaOpacitySlider.Value / 100.0,
+                    BackgroundColor = selectedTheme.Colors.Background ?? "#01000000",
+                    HeaderColor = selectedTheme.Colors.Header ?? "#22000000",
+                    FontColor = selectedTheme.Colors.TextPrimary ?? "#FFFFFFFF",
+                    SecondaryFontColor = selectedTheme.Colors.TextSecondary ?? "#FFAAAAAA",
+                    AccentColor = selectedTheme.Colors.Accent ?? "#0078D7"
                 };
 
-                newTheme.BackgroundColor    = selectedTheme.Colors.Background    ?? newTheme.BackgroundColor;
-                newTheme.HeaderColor        = selectedTheme.Colors.Header        ?? newTheme.HeaderColor;
-                newTheme.FontColor          = selectedTheme.Colors.TextPrimary   ?? newTheme.FontColor;
-                newTheme.SecondaryFontColor = selectedTheme.Colors.TextSecondary ?? newTheme.SecondaryFontColor;
-                newTheme.AccentColor        = selectedTheme.Colors.Accent        ?? newTheme.AccentColor;
-
-                await ConfigStore.UpdateAsync(c =>
+                bool saved = await ConfigStore.UpdateAsync(c =>
                 {
-                    c.FirstRunComplete     = true;
-                    c.ShowTaskbarIcon      = showTaskbar;
+                    c.FirstRunComplete = true;
+                    c.ShowTaskbarIcon = showTaskbar;
                     c.RestoreFilesOnDelete = restoreFiles;
-                    c.EnableGhostMode      = ghostMode;
-                    c.PauseMediaOnRollup   = pauseMedia;
-                    c.ThemeId              = selectedTheme.Id;
-                    c.Theme                = newTheme;
+                    c.EnableGhostMode = ghostMode;
+                    c.PauseMediaOnRollup = pauseMedia;
+                    c.ThemeId = selectedTheme.Id;
+                    c.Theme = newTheme;
                 });
+
+                if (!saved)
+                {
+                    ShowStatus("Could not save settings to disk.", StatusKind.Error);
+                    return;
+                }
+
                 App.PauseMediaOnRollup = pauseMedia;
 
                 foreach (Window window in Application.Current.Windows)
                 {
-                    if (window is MainWindow fence)
+                    if (window is MainWindow fence && !fence.IsPendingDeletion)
                     {
                         fence.ShowInTaskbar = showTaskbar;
                         fence.UpdateGlobalGhostMode(ghostMode);
-
                         fence.ApplyTheme(newTheme);
                     }
                 }
 
-                try
+                bool wantStartup = StartupToggle.IsChecked == true;
+                if (_lastSavedStartupEnabled != wantStartup)
                 {
-                    using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                    try
+                    {
+                        using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
 
-                    if (StartupToggle.IsChecked == true)
-                    {
-                        string exePath = Environment.ProcessPath!;
-                        key?.SetValue("FluidFences", $"\"{exePath}\"");
+                        if (wantStartup)
+                        {
+                            string exePath = Environment.ProcessPath!;
+                            key?.SetValue("FluidFences", $"\"{exePath}\"");
+                        }
+                        else
+                        {
+                            key?.DeleteValue("FluidFences", false);
+                        }
+                        _lastSavedStartupEnabled = wantStartup;
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        key?.DeleteValue("FluidFences", false);
+                        LogError("WriteRegistry", ex);
+                        ShowStatus("Could not change the Windows startup setting.", StatusKind.Warning);
+                        return;
                     }
-                }
-                catch (Exception ex)
-                {
-                    LogError("WriteRegistry", ex);
-                    ShowStatus("Could not change the Windows startup setting.", StatusKind.Warning);
-                    return;
                 }
 
                 if (showSavedStatus)
@@ -778,8 +930,11 @@ namespace DesktopFences
         {
             try
             {
-                await App.SaveCurrentLayoutAsync();
-                ShowStatus("Layout snapshot saved.", StatusKind.Success);
+                var result = await App.SaveCurrentLayoutAsync();
+                if (result == SnapshotResult.Succeeded)
+                    ShowStatus("Layout snapshot saved.", StatusKind.Success);
+                else
+                    ShowStatus("Could not save layout snapshot.", StatusKind.Error);
             }
             catch (Exception ex)
             {
@@ -792,8 +947,19 @@ namespace DesktopFences
         {
             try
             {
-                await App.RestoreLayoutSnapshotAsync();
-                ShowStatus("Fences returned to the saved layout.", StatusKind.Success);
+                var result = await App.RestoreLayoutSnapshotAsync();
+                switch (result)
+                {
+                    case SnapshotResult.Succeeded:
+                        ShowStatus("Fences returned to the saved layout.", StatusKind.Success);
+                        break;
+                    case SnapshotResult.NotFound:
+                        ShowStatus("No saved layout snapshot was found.", StatusKind.Warning);
+                        break;
+                    default:
+                        ShowStatus("Could not restore layout snapshot.", StatusKind.Error);
+                        break;
+                }
             }
             catch (Exception ex)
             {
@@ -806,9 +972,12 @@ namespace DesktopFences
         {
             FenceListBox.Items.Clear();
 
+            bool zenActive = Application.Current is App app && app.IsZenModeActive;
             foreach (Window window in Application.Current.Windows)
             {
-                if (window is MainWindow { Visibility: Visibility.Visible } fence)
+                if (window is MainWindow fence &&
+                    !fence.IsPendingDeletion &&
+                    (fence.Visibility == Visibility.Visible || (zenActive && fence.Visibility == Visibility.Hidden)))
                 {
                     FenceListItem item = new(fence);
                     FenceListBox.Items.Add(item);
@@ -818,7 +987,19 @@ namespace DesktopFences
                 }
             }
 
+            if (FenceListBox.Items.Count > 0 && FenceListBox.SelectedItem is null)
+            {
+                FenceListBox.SelectedIndex = 0;
+            }
+
             bool any = FenceListBox.Items.Count > 0;
+            if (!any)
+            {
+                _hasPendingColor = false;
+                _pendingColorIsCustom = false;
+                _currentlySelectedFence = null;
+            }
+
             NoFencesHint.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
             FenceDetailPanel.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
             RefreshStats();
@@ -826,13 +1007,18 @@ namespace DesktopFences
 
         private void FenceListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (sender is ListView { SelectedItem: FenceListItem listItem } sourceBox)
+            FlushPendingColor();
+
+            if (sender is ListView { SelectedItem: FenceListItem listItem })
             {
                 MainWindow fence = listItem.Fence;
 
-                _currentlySelectedFence = fence; _isLoadingFenceData = true;
-                TitleInput.Text = fence.FenceTitle; AutoSortInput.Text = fence.AutoSortExtensions;
-                EnableSearchToggle.IsChecked = fence.ShowSearch; PresetDropdown.SelectedIndex = 0;
+                _currentlySelectedFence = fence;
+                _isLoadingFenceData = true;
+                TitleInput.Text = fence.FenceTitle;
+                AutoSortInput.Text = fence.AutoSortExtensions;
+                EnableSearchToggle.IsChecked = fence.ShowSearch;
+                PresetDropdown.SelectedIndex = 0;
                 GhostModeDropdown.SelectedIndex = fence.GhostModeOverride;
 
                 SortDropdown.SelectedItem = SortDropdown.Items
@@ -843,7 +1029,7 @@ namespace DesktopFences
 
                 UpdateColorSlidersFromFence(fence);
                 UpdateColorSourceCard();
-                if (fence.GetIsRolledUp())
+                if (fence.GetIsRolledUp() && fence.Visibility == Visibility.Visible)
                 {
                     fence.RevealTemporarily();
                 }
@@ -854,16 +1040,26 @@ namespace DesktopFences
         private void UpdateColorSlidersFromFence(MainWindow fence)
         {
             _isColorInitializing = true;
-            Color startColor = fence.FenceColor; AlphaSlider.Value = fence.FenceOpacity * 100.0;
+            Color startColor = fence.FenceColor;
+            AlphaSlider.Value = fence.FenceOpacity * 100.0;
             if (BlendWallpaperToggle is not null) BlendWallpaperToggle.IsChecked = (AlphaSlider.Value <= 2.0);
             if (AutoMatchToggle is not null) AutoMatchToggle.IsChecked = fence.AutoMatchColor;
 
-            bool isAuto = fence.AutoMatchColor; HueSlider.IsEnabled = !isAuto; SaturationSlider.IsEnabled = !isAuto; LightnessSlider.IsEnabled = !isAuto;
-            double opacity = isAuto ? 0.4 : 1.0; HueSlider.Opacity = opacity; SaturationSlider.Opacity = opacity; LightnessSlider.Opacity = opacity;
+            bool isAuto = fence.AutoMatchColor;
+            HueSlider.IsEnabled = !isAuto;
+            SaturationSlider.IsEnabled = !isAuto;
+            LightnessSlider.IsEnabled = !isAuto;
+            double opacity = isAuto ? 0.4 : 1.0;
+            HueSlider.Opacity = opacity;
+            SaturationSlider.Opacity = opacity;
+            LightnessSlider.Opacity = opacity;
 
             System.Drawing.Color sysColor = System.Drawing.Color.FromArgb(255, startColor.R, startColor.G, startColor.B);
-            HueSlider.Value = sysColor.GetHue(); SaturationSlider.Value = sysColor.GetSaturation() * 100.0; LightnessSlider.Value = sysColor.GetBrightness() * 100.0;
-            UpdateColorPreview(); _isColorInitializing = false;
+            HueSlider.Value = sysColor.GetHue();
+            SaturationSlider.Value = sysColor.GetSaturation() * 100.0;
+            LightnessSlider.Value = sysColor.GetBrightness() * 100.0;
+            UpdateColorPreview();
+            _isColorInitializing = false;
         }
 
         private void AutoMatchToggle_Click(object sender, RoutedEventArgs e)
@@ -886,8 +1082,13 @@ namespace DesktopFences
                 ? FenceColorSource.AutoMatch
                 : FenceColorSource.Theme;
 
-            HueSlider.IsEnabled = !isAuto; SaturationSlider.IsEnabled = !isAuto; LightnessSlider.IsEnabled = !isAuto;
-            double opacity = isAuto ? 0.4 : 1.0; HueSlider.Opacity = opacity; SaturationSlider.Opacity = opacity; LightnessSlider.Opacity = opacity;
+            HueSlider.IsEnabled = !isAuto;
+            SaturationSlider.IsEnabled = !isAuto;
+            LightnessSlider.IsEnabled = !isAuto;
+            double opacity = isAuto ? 0.4 : 1.0;
+            HueSlider.Opacity = opacity;
+            SaturationSlider.Opacity = opacity;
+            LightnessSlider.Opacity = opacity;
 
             UpdateColorSlidersFromFence(_currentlySelectedFence);
             UpdateColorSourceCard();
@@ -967,8 +1168,12 @@ namespace DesktopFences
 
         private void UpdateColorPreview()
         {
-            double h = HueSlider.Value; double s = SaturationSlider.Value / 100.0; double l = LightnessSlider.Value / 100.0; double a = AlphaSlider.Value / 100.0;
-            Color rgbColor = HslToRgb(h, s, l); Color finalColor = Color.FromArgb((byte)(a * 255), rgbColor.R, rgbColor.G, rgbColor.B);
+            double h = HueSlider.Value;
+            double s = SaturationSlider.Value / 100.0;
+            double l = LightnessSlider.Value / 100.0;
+            double a = AlphaSlider.Value / 100.0;
+            Color rgbColor = HslToRgb(h, s, l);
+            Color finalColor = Color.FromArgb((byte)Math.Round(Math.Clamp(a * 255.0, 0.0, 255.0)), rgbColor.R, rgbColor.G, rgbColor.B);
             var previewBrush = new SolidColorBrush(finalColor);
             previewBrush.Freeze();
             ColorPreview.Background = previewBrush;
@@ -982,7 +1187,9 @@ namespace DesktopFences
 
             if (!_isColorInitializing && _currentlySelectedFence is not null)
             {
-                _pendingColor = finalColor; _pendingOpacity = a; _hasPendingColor = true;
+                _pendingColor = finalColor;
+                _pendingOpacity = a;
+                _hasPendingColor = true;
                 if (!_liveUpdateTimer.IsEnabled) _liveUpdateTimer.Start();
             }
         }
@@ -991,6 +1198,7 @@ namespace DesktopFences
         {
             if (_isLoadingFenceData || PresetDropdown.SelectedItem is null || AutoSortInput is null) return;
             string selection = ((ComboBoxItem)PresetDropdown.SelectedItem).Content.ToString() ?? "";
+            bool matched = true;
             switch (selection)
             {
                 case "Images & Photos": AutoSortInput.Text = ".jpg, .jpeg, .png, .gif, .bmp, .webp, .svg, .ico, .tif"; break;
@@ -999,20 +1207,19 @@ namespace DesktopFences
                 case "Videos": AutoSortInput.Text = ".mp4, .mkv, .avi, .mov, .wmv, .webm, .m4v"; break;
                 case "Archives (.zip)": AutoSortInput.Text = ".zip, .rar, .7z, .tar, .gz"; break;
                 case "Apps & Shortcuts": AutoSortInput.Text = ".lnk, .exe, .url, .bat, .msi"; break;
+                default: matched = false; break;
             }
-        }
-
-        private void SaveSettings_Click(object sender, RoutedEventArgs e)
-        {
-            SaveCurrentFenceSettings();
+            if (matched) AutoSaveFence();
         }
 
         private void SaveCurrentFenceSettings()
         {
-            if (_currentlySelectedFence is not null && !_isLoadingFenceData)
+            if (_currentlySelectedFence is not null && !_currentlySelectedFence.IsPendingDeletion && !_isLoadingFenceData)
             {
-                _currentlySelectedFence.FenceTitle = TitleInput.Text; _currentlySelectedFence.AutoSortExtensions = AutoSortInput.Text;
-                _currentlySelectedFence.ShowSearch = EnableSearchToggle.IsChecked ?? true; _currentlySelectedFence.UpdateSearchVisibility();
+                _currentlySelectedFence.FenceTitle = TitleInput.Text;
+                _currentlySelectedFence.AutoSortExtensions = AutoSortInput.Text;
+                _currentlySelectedFence.ShowSearch = EnableSearchToggle.IsChecked ?? true;
+                _currentlySelectedFence.UpdateSearchVisibility();
                 _currentlySelectedFence.GhostModeOverride = GhostModeDropdown.SelectedIndex;
 
                 if (SortDropdown.SelectedItem is ComboBoxItem selectedSort && selectedSort.Tag is string sortKey)
@@ -1020,7 +1227,11 @@ namespace DesktopFences
 
                 _currentlySelectedFence.DashboardSaveAndRefresh();
 
-                if (FenceListBox.SelectedItem is FenceListItem item1) { item1.Title = TitleInput.Text; FenceListBox.Items.Refresh(); }
+                if (FenceListBox.SelectedItem is FenceListItem item1)
+                {
+                    item1.Title = TitleInput.Text;
+                    FenceListBox.Items.Refresh();
+                }
             }
         }
 
@@ -1028,26 +1239,44 @@ namespace DesktopFences
         {
             if (_currentlySelectedFence is null) return;
 
+            CommitPendingDeletions();
+
             var fence = _currentlySelectedFence;
             string title = fence.FenceTitle;
-            string id = fence.GetFenceId();
+            Visibility priorVisibility = fence.Visibility;
 
-            fence.DashboardDelete();
+            if (Owner == fence) Owner = null;
+
+            _hasPendingColor = false;
+            _pendingColorIsCustom = false;
+            fence.IsPendingDeletion = true;
+            fence.Visibility = Visibility.Collapsed;
+
             LoadAllFences();
 
-            ShowStatus($"Deleted \u201c{title}\u201d.", StatusKind.Success, undo: () =>
-            {
-                var restored = new MainWindow(id);
-                restored.Show();
-                LoadAllFences();
-                ShowStatus($"Restored \u201c{title}\u201d.", StatusKind.Success);
-            });
+            ShowStatus(
+                $"Deleted '{title}'.",
+                StatusKind.Success,
+                undo: () =>
+                {
+                    fence.IsPendingDeletion = false;
+                    bool zenActive = Application.Current is App app && app.IsZenModeActive;
+                    fence.Visibility = zenActive ? Visibility.Hidden : priorVisibility;
+                    LoadAllFences();
+                    ShowStatus($"Restored '{title}'.", StatusKind.Success);
+                },
+                onCommit: () =>
+                {
+                    if (fence.IsPendingDeletion)
+                    {
+                        fence.DashboardDelete();
+                    }
+                });
         }
 
         private void VenmoQr_Click(object sender, RoutedEventArgs e)
         {
-            const string venmoUrl =
-                "https://account.venmo.com/u/davedebugs";
+            const string venmoUrl = "https://account.venmo.com/u/davedebugs";
             try
             {
                 Process.Start(new ProcessStartInfo(venmoUrl) { UseShellExecute = true });
@@ -1083,22 +1312,22 @@ namespace DesktopFences
             {
                 var legacy = new Core.ThemeSettings
                 {
-                    ThemeName           = theme.Name,
-                    BackgroundColor     = theme.Colors.Background    ?? "",
-                    HeaderColor         = theme.Colors.Header        ?? "",
-                    FontColor           = theme.Colors.TextPrimary   ?? "",
-                    SecondaryFontColor  = theme.Colors.TextSecondary ?? "",
-                    AccentColor         = theme.Colors.Accent        ?? "",
+                    ThemeName = theme.Name,
+                    BackgroundColor = theme.Colors.Background ?? "",
+                    HeaderColor = theme.Colors.Header ?? "",
+                    FontColor = theme.Colors.TextPrimary ?? "",
+                    SecondaryFontColor = theme.Colors.TextSecondary ?? "",
+                    AccentColor = theme.Colors.Accent ?? "",
                     BackgroundMediaPath = mediaPath ?? "",
-                    MediaOpacity        = opacity
+                    MediaOpacity = opacity
                 };
 
                 foreach (Window w in Application.Current.Windows)
                 {
-                    if (w is MainWindow fence)
+                    if (w is MainWindow fence && !fence.IsPendingDeletion)
                     {
                         fence.ApplyTheme(legacy);
-                        if (fence.GetIsRolledUp())
+                        if (fence.GetIsRolledUp() && fence.Visibility == Visibility.Visible)
                         {
                             fence.RevealTemporarily();
                         }
@@ -1110,27 +1339,42 @@ namespace DesktopFences
 
         private static string? ResolveThemeLoop(Core.Theming.ThemeDefinition theme)
         {
+            string cacheKey = $"{theme.Id}|{theme.LoopFile ?? ""}";
+            if (LoopResolveCache.TryGetValue(cacheKey, out string? cached))
+            {
+                if (cached is null || File.Exists(cached)) return cached;
+                LoopResolveCache.TryRemove(cacheKey, out _);
+            }
+
+            string? resolved = ResolveThemeLoopCore(theme);
+            if (LoopResolveCache.Count < 128)
+                LoopResolveCache[cacheKey] = resolved;
+            return resolved;
+        }
+
+        private static string? ResolveThemeLoopCore(Core.Theming.ThemeDefinition theme)
+        {
             try
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string loopsDir = System.IO.Path.Combine(baseDir, "Assets", "Loops");
+                string loopsDir = Path.Combine(baseDir, "Assets", "Loops");
 
                 if (!string.IsNullOrWhiteSpace(theme.LoopFile))
                 {
-                    string safeLoopFile = System.IO.Path.GetFileName(theme.LoopFile);
-                    string userMediaPath = System.IO.Path.Combine(Core.Theming.ThemeCatalog.UserThemeFolder, "media", safeLoopFile);
-                    if (System.IO.File.Exists(userMediaPath)) return userMediaPath;
+                    string safeLoopFile = Path.GetFileName(theme.LoopFile);
+                    string userMediaPath = Path.Combine(Core.Theming.ThemeCatalog.UserThemeFolder, "media", safeLoopFile);
+                    if (File.Exists(userMediaPath)) return userMediaPath;
 
-                    string builtinLoopPath = System.IO.Path.Combine(loopsDir, safeLoopFile);
-                    if (System.IO.File.Exists(builtinLoopPath)) return builtinLoopPath;
+                    string builtinLoopPath = Path.Combine(loopsDir, safeLoopFile);
+                    if (File.Exists(builtinLoopPath)) return builtinLoopPath;
                 }
 
-                if (!System.IO.Directory.Exists(loopsDir)) return null;
+                if (!Directory.Exists(loopsDir)) return null;
 
                 foreach (string candidate in new[] { theme.Id, theme.Id.Replace('-', '_') })
                 {
-                    string path = System.IO.Path.Combine(loopsDir, candidate + ".mp4");
-                    if (System.IO.File.Exists(path)) return path;
+                    string path = Path.Combine(loopsDir, candidate + ".mp4");
+                    if (File.Exists(path)) return path;
                 }
 
                 return BorrowNearestLoop(theme, loopsDir);
@@ -1146,7 +1390,7 @@ namespace DesktopFences
                     !Core.Theming.ThemeEngine.TryParseColor(theme.Colors.Accent, out Color accent))
                     return null;
 
-                var bgLab  = Core.Theming.ColorSpace.RgbToOklab(bg.R, bg.G, bg.B);
+                var bgLab = Core.Theming.ColorSpace.RgbToOklab(bg.R, bg.G, bg.B);
                 var accLab = Core.Theming.ColorSpace.RgbToOklab(accent.R, accent.G, accent.B);
 
                 string? best = null;
@@ -1157,18 +1401,18 @@ namespace DesktopFences
                     if (!candidate.IsBuiltIn) continue;
                     if (string.Equals(candidate.Id, theme.Id, StringComparison.OrdinalIgnoreCase)) continue;
 
-                    string path = System.IO.Path.Combine(loopFolder, candidate.Id + ".mp4");
-                    if (!System.IO.File.Exists(path))
+                    string path = Path.Combine(loopFolder, candidate.Id + ".mp4");
+                    if (!File.Exists(path))
                     {
-                        path = System.IO.Path.Combine(loopFolder, candidate.Id.Replace('-', '_') + ".mp4");
-                        if (!System.IO.File.Exists(path)) continue;
+                        path = Path.Combine(loopFolder, candidate.Id.Replace('-', '_') + ".mp4");
+                        if (!File.Exists(path)) continue;
                     }
 
                     if (!Core.Theming.ThemeEngine.TryParseColor(candidate.Colors.Background, out Color cbg) ||
                         !Core.Theming.ThemeEngine.TryParseColor(candidate.Colors.Accent, out Color cacc))
                         continue;
 
-                    var cbgLab  = Core.Theming.ColorSpace.RgbToOklab(cbg.R, cbg.G, cbg.B);
+                    var cbgLab = Core.Theming.ColorSpace.RgbToOklab(cbg.R, cbg.G, cbg.B);
                     var caccLab = Core.Theming.ColorSpace.RgbToOklab(cacc.R, cacc.G, cacc.B);
 
                     double distance = OklabDistance(bgLab, cbgLab) * 2.0
@@ -1179,7 +1423,7 @@ namespace DesktopFences
 
                 if (best is not null)
                     Core.Theming.ThemeLog.Info("ResolveThemeLoop",
-                        $"'{theme.Id}' ships no loop; borrowing {System.IO.Path.GetFileName(best)} (distance {bestDistance:F3})");
+                        $"'{theme.Id}' ships no loop; borrowing {Path.GetFileName(best)} (distance {bestDistance:F3})");
 
                 return best;
             }
@@ -1199,13 +1443,14 @@ namespace DesktopFences
                 uint count = Core.Theming.WallpaperSampler.GetMonitorCount();
                 if (count <= 1) return null;
 
-                var helper = new System.Windows.Interop.WindowInteropHelper(this);
-                var current = System.Windows.Forms.Screen.FromHandle(helper.Handle);
+                IntPtr hwnd = _windowHandle != IntPtr.Zero
+                    ? _windowHandle
+                    : new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                var current = System.Windows.Forms.Screen.FromHandle(hwnd);
 
                 var screens = System.Windows.Forms.Screen.AllScreens;
                 for (uint i = 0; i < count && i < screens.Length; i++)
                 {
-
                     if (screens[i].Bounds == current.Bounds) return i;
                 }
                 return null;
@@ -1217,8 +1462,10 @@ namespace DesktopFences
         {
             try
             {
-                var helper = new System.Windows.Interop.WindowInteropHelper(this);
-                var b = System.Windows.Forms.Screen.FromHandle(helper.Handle).Bounds;
+                IntPtr hwnd = _windowHandle != IntPtr.Zero
+                    ? _windowHandle
+                    : new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                var b = System.Windows.Forms.Screen.FromHandle(hwnd).Bounds;
                 return new Rect(b.X, b.Y, b.Width, b.Height);
             }
             catch (Exception ex) { LogError("ResolveCurrentMonitorBounds", ex); return null; }
@@ -1226,8 +1473,10 @@ namespace DesktopFences
 
         private void BrowseMedia_Click(object sender, RoutedEventArgs e)
         {
-            OpenFileDialog dlg = new OpenFileDialog();
-            dlg.Filter = "Media Files (*.mp4;*.gif)|*.mp4;*.gif|All Files (*.*)|*.*";
+            OpenFileDialog dlg = new()
+            {
+                Filter = "Media Files (*.mp4;*.gif)|*.mp4;*.gif|All Files (*.*)|*.*"
+            };
             if (dlg.ShowDialog() == true)
             {
                 MediaFilePathInput.Text = dlg.FileName;
@@ -1235,7 +1484,7 @@ namespace DesktopFences
                     Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
                     string.IsNullOrWhiteSpace(MediaFilePathInput.Text) ? null : MediaFilePathInput.Text,
                     MediaOpacitySlider.Value / 100.0);
-                AutoSaveGlobal();
+                _ = AutoSaveGlobalAsync();
             }
         }
 
@@ -1246,11 +1495,34 @@ namespace DesktopFences
                 Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
                 null,
                 MediaOpacitySlider.Value / 100.0);
-            AutoSaveGlobal();
+            _ = AutoSaveGlobalAsync();
         }
 
-        private void AskAQuestion_Click(object sender, RoutedEventArgs e) { try { Process.Start(new ProcessStartInfo("mailto:davedebugs@outlook.com?subject=Fluid Fences - Question") { UseShellExecute = true }); } catch { } }
-        private void SuggestAnIdea_Click(object sender, RoutedEventArgs e) { try { Process.Start(new ProcessStartInfo("mailto:davedebugs@outlook.com?subject=Fluid Fences - Suggestion") { UseShellExecute = true }); } catch { } }
+        private void AskAQuestion_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("mailto:davedebugs@outlook.com?subject=Fluid%20Fences%20-%20Question") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                LogError("AskAQuestion_Click", ex);
+                ShowStatus("Could not open your mail app.", StatusKind.Error);
+            }
+        }
+
+        private void SuggestAnIdea_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("mailto:davedebugs@outlook.com?subject=Fluid%20Fences%20-%20Suggestion") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                LogError("SuggestAnIdea_Click", ex);
+                ShowStatus("Could not open your mail app.", StatusKind.Error);
+            }
+        }
 
         private bool _autoSaveArmed;
 
@@ -1262,31 +1534,32 @@ namespace DesktopFences
             foreach (var toggle in new[] { StartupToggle, TaskbarToggle, RestoreFilesToggle,
                                            GhostModeToggle, PauseMediaToggle })
             {
-                toggle.Checked   += (_, _) => AutoSaveGlobal();
-                toggle.Unchecked += (_, _) => AutoSaveGlobal();
+                toggle.Checked   += (_, _) => _ = AutoSaveGlobalAsync();
+                toggle.Unchecked += (_, _) => _ = AutoSaveGlobalAsync();
             }
 
             EnableSearchToggle.Checked   += (_, _) => AutoSaveFence();
             EnableSearchToggle.Unchecked += (_, _) => AutoSaveFence();
             SortDropdown.SelectionChanged      += (_, _) => AutoSaveFence();
             GhostModeDropdown.SelectionChanged += (_, _) => AutoSaveFence();
-            AnimationDropdown.SelectionChanged += (_, _) => AutoSaveGlobal();
+            AnimationDropdown.SelectionChanged += (_, _) => _ = AutoSaveGlobalAsync();
 
             TitleInput.LostFocus     += (_, _) => AutoSaveFence();
             AutoSortInput.LostFocus  += (_, _) => AutoSaveFence();
 
             MediaOpacitySlider.ValueChanged += (_, _) =>
             {
-                if (!_autoSaveArmed || _isLoadingFenceData) return;
+                if (!_autoSaveArmed || _isLoadingFenceData || _suppressMediaSliderAutoSave) return;
                 ApplyMediaToOpenFences(
                     Core.Theming.ThemeCatalog.Get(App.ActiveThemeId),
                     string.IsNullOrWhiteSpace(MediaFilePathInput.Text) ? null : MediaFilePathInput.Text,
                     MediaOpacitySlider.Value / 100.0);
-                AutoSaveGlobal();
+                _mediaOpacityTimer.Stop();
+                _mediaOpacityTimer.Start();
             };
         }
 
-        private async void AutoSaveGlobal()
+        private async Task AutoSaveGlobalAsync()
         {
             if (!_autoSaveArmed || _isLoadingFenceData) return;
             await SaveGlobalSettingsCoreAsync(showSavedStatus: true);
@@ -1296,21 +1569,20 @@ namespace DesktopFences
         {
             if (!_autoSaveArmed || _isLoadingFenceData) return;
             SaveCurrentFenceSettings();
-            if (FenceListBox.SelectedItem is FenceListItem item) { item.Title = TitleInput.Text; FenceListBox.Items.Refresh(); }
             ShowStatus("Saved.", StatusKind.Success);
         }
 
         private sealed record NavEntry(string Tag, string Label, Wpf.Ui.Controls.SymbolRegular Icon, string Keywords);
 
         private static readonly NavEntry[] NavEntries =
-        {
+        [
             new("AboutGrid",       "Home",       Wpf.Ui.Controls.SymbolRegular.Home24,     "about version support donate coffee"),
             new("GeneralGrid",     "General",    Wpf.Ui.Controls.SymbolRegular.Settings24, "startup windows taskbar ghost mode delete restore layout snapshot media pause"),
             new("FencesGrid",      "Fences",     Wpf.Ui.Controls.SymbolRegular.Board24,    "fence name title sort ghost search auto organise colour color opacity hue background video delete"),
             new("ThemeEditorGrid", "Themes",     Wpf.Ui.Controls.SymbolRegular.Color24,    "theme colour color dark light contrast accessibility import export animation motion"),
             new("HowToGrid",       "How to use", Wpf.Ui.Controls.SymbolRegular.Question24, "help guide shortcuts keyboard zen portal tabs merge"),
             new("FeedbackGrid",    "Feedback",   Wpf.Ui.Controls.SymbolRegular.Mail24,     "feedback bug question suggestion contact"),
-        };
+        ];
 
         private readonly Dictionary<string, System.Windows.Controls.Primitives.ToggleButton> _navItems = new();
         private string _currentTag = "AboutGrid";
@@ -1349,7 +1621,7 @@ namespace DesktopFences
 
                 string tag = entry.Tag;
 
-                button.Checked += (sender, _) =>
+                button.Checked += (_, _) =>
                 {
                     if (_suppressNavChecked) return;
                     SwitchToTab(tag);
@@ -1389,31 +1661,27 @@ namespace DesktopFences
                 if (hit) matches.Add(entry.Tag);
             }
 
-            if (matches.Count == 1 && matches[0] != _currentTag) SwitchToTab(matches[0]);
+            if (matches.Count > 0 && !matches.Contains(_currentTag))
+                SwitchToTab(matches[0]);
         }
 
         public void SwitchToTab(string tag)
         {
-            var pages = new Dictionary<string, FrameworkElement?>
-            {
-                ["AboutGrid"]       = AboutGrid,
-                ["HowToGrid"]       = HowToGrid,
-                ["GeneralGrid"]     = GeneralGrid,
-                ["FencesGrid"]      = FencesGrid,
-                ["ThemeEditorGrid"] = ThemeEditorGrid,
-                ["FeedbackGrid"]    = FeedbackGrid,
-            };
-
-            foreach (var kv in pages)
+            foreach (var kv in _pages)
                 if (kv.Value is not null)
                     kv.Value.Visibility = kv.Key == tag ? Visibility.Visible : Visibility.Collapsed;
 
+            _currentTag = tag;
+
             try
             {
-                if (HomeLogoAnim?.Source is not null)
+                if (tag == "AboutGrid")
                 {
-                    if (tag == "AboutGrid") HomeLogoAnim.Play();
-                    else HomeLogoAnim.Pause();
+                    if (IsLoaded) StartHomeLogoAnimation();
+                }
+                else if (HomeLogoAnim?.Source is not null)
+                {
+                    HomeLogoAnim.Pause();
                 }
             }
             catch { }
@@ -1422,7 +1690,6 @@ namespace DesktopFences
             try { foreach (var kv in _navItems) kv.Value.IsChecked = kv.Key == tag; }
             finally { _suppressNavChecked = false; }
 
-            _currentTag = tag;
             PageScroller?.ScrollToTop();
 
             var duration = Core.Theming.ThemeEngine.ScaleDuration(150);
@@ -1432,21 +1699,26 @@ namespace DesktopFences
 
             if (PageHost.RenderTransform is TranslateTransform tt)
                 tt.BeginAnimation(TranslateTransform.YProperty,
-                    new DoubleAnimation(8, 0, duration)
-                    { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+                    new DoubleAnimation(8, 0, duration) { EasingFunction = TabEaseOut });
         }
 
         private enum StatusKind { Success, Info, Warning, Error }
 
         private Action? _undoAction;
-        private readonly System.Windows.Threading.DispatcherTimer _statusTimer = new();
+        private readonly DispatcherTimer _statusTimer = new();
 
-        private void ShowStatus(string message, StatusKind kind = StatusKind.Info, Action? undo = null)
+        private void ShowStatus(string message, StatusKind kind = StatusKind.Info, Action? undo = null, Action? onCommit = null)
         {
             try
             {
+                if (_pendingCommitAction is not null && onCommit is null)
+                {
+                    CommitPendingDeletions();
+                }
+
                 StatusText.Text = message;
                 _undoAction = undo;
+                _pendingCommitAction = onCommit;
                 StatusUndo.Visibility = undo is null ? Visibility.Collapsed : Visibility.Visible;
 
                 string brushKey;
@@ -1479,20 +1751,22 @@ namespace DesktopFences
             catch (Exception ex) { LogError("ShowStatus", ex); }
         }
 
-        private void HideStatus()
+        private void HideStatus(bool commitPending = true)
         {
             _statusTimer.Stop();
             _undoAction = null;
+            if (commitPending) CommitPendingDeletions();
+            else _pendingCommitAction = null;
             StatusStrip.Visibility = Visibility.Collapsed;
             StatusUndo.Visibility = Visibility.Collapsed;
         }
 
-        private void StatusDismiss_Click(object sender, RoutedEventArgs e) => HideStatus();
+        private void StatusDismiss_Click(object sender, RoutedEventArgs e) => HideStatus(commitPending: true);
 
         private void StatusUndo_Click(object sender, RoutedEventArgs e)
         {
             var action = _undoAction;
-            HideStatus();
+            HideStatus(commitPending: false);
             if (action is null)
             {
                 ShowStatus("There is nothing to undo.", StatusKind.Warning);
@@ -1511,10 +1785,12 @@ namespace DesktopFences
         {
             try
             {
+                bool zenActive = Application.Current is App app && app.IsZenModeActive;
                 int fences = Application.Current.Windows.OfType<MainWindow>()
-                                .Count(f => f.Visibility == Visibility.Visible);
-                StatFenceCount.Text  = fences.ToString(System.Globalization.CultureInfo.CurrentCulture);
-                StatThemeCount.Text  = Core.Theming.ThemeCatalog.Themes.Count
+                                .Count(f => !f.IsPendingDeletion &&
+                                            (f.Visibility == Visibility.Visible || (zenActive && f.Visibility == Visibility.Hidden)));
+                StatFenceCount.Text = fences.ToString(System.Globalization.CultureInfo.CurrentCulture);
+                StatThemeCount.Text = Core.Theming.ThemeCatalog.Themes.Count
                                           .ToString(System.Globalization.CultureInfo.CurrentCulture);
                 StatActiveTheme.Text = Core.Theming.ThemeCatalog.Get(App.ActiveThemeId).Name;
 
@@ -1583,11 +1859,16 @@ namespace DesktopFences
         {
             try
             {
-                string path = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory, "Assets", "morph_icon.mp4");
-                if (!System.IO.File.Exists(path) || HomeLogoAnim is null) return;
+                if (HomeLogoAnim is null || Core.Theming.ThemeEngine.IsReducedMotion()) return;
 
-                HomeLogoAnim.Source = new Uri(path, UriKind.Absolute);
+                if (HomeLogoAnim.Source is null)
+                {
+                    string path = Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory, "Assets", "morph_icon.mp4");
+                    if (!File.Exists(path)) return;
+                    HomeLogoAnim.Source = new Uri(path, UriKind.Absolute);
+                }
+
                 HomeLogoAnim.Play();
             }
             catch (Exception ex) { LogError("StartHomeLogoAnimation", ex); }
@@ -1595,7 +1876,7 @@ namespace DesktopFences
 
         private void HomeLogoAnim_Ended(object sender, RoutedEventArgs e)
         {
-
+            if (_currentTag != "AboutGrid" || Core.Theming.ThemeEngine.IsReducedMotion()) return;
             try { HomeLogoAnim.Position = TimeSpan.Zero; HomeLogoAnim.Play(); }
             catch (Exception ex) { LogError("HomeLogoAnim_Ended", ex); }
         }
@@ -1606,11 +1887,11 @@ namespace DesktopFences
         private void WireVersionEasterEgg()
         {
             if (VersionText is null) return;
-            VersionText.Background = System.Windows.Media.Brushes.Transparent;
+            VersionText.Background = Brushes.Transparent;
             VersionText.MouseLeftButtonDown += VersionText_Clicked;
         }
 
-        private void VersionText_Clicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void VersionText_Clicked(object sender, MouseButtonEventArgs e)
         {
             var now = DateTime.UtcNow;
 
@@ -1628,6 +1909,5 @@ namespace DesktopFences
                 catch (Exception ex) { LogError("RabbitEasterEgg", ex); }
             }
         }
-
     }
 }

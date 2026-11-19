@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -8,21 +10,22 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace DesktopFences.Core.Theming
 {
-
     public static partial class ThemeCatalog
     {
         private const string BuiltinResourcePrefix = "DesktopFences.Themes.Builtin.";
         public const string ThemePackageExtension = ".fftheme";
+        private const long MaxJsonThemeBytes = 1024 * 1024;
 
         [GeneratedRegex(@"[^a-z0-9]+")]
         private static partial Regex SlugifyRegex();
 
-        private static readonly System.Collections.Frozen.FrozenSet<string> AllowedMediaExtensions =
-            System.Collections.Frozen.FrozenSet.ToFrozenSet(
+        private static readonly FrozenSet<string> AllowedMediaExtensions =
+            FrozenSet.ToFrozenSet(
                 [".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
                 StringComparer.OrdinalIgnoreCase);
 
@@ -41,30 +44,54 @@ namespace DesktopFences.Core.Theming
             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
         };
 
-        private static readonly ObservableCollection<ThemeDefinition> _themes = new();
+        private sealed record CatalogSnapshot(
+            FrozenDictionary<string, ThemeDefinition> ById,
+            FrozenDictionary<string, ThemeDefinition> ByName,
+            ThemeDefinition DefaultTheme);
+
+        private static readonly ObservableCollection<ThemeDefinition> _themes = [];
         private static readonly object _catalogLock = new();
+        private static volatile CatalogSnapshot? _snapshot;
 
         public static ReadOnlyObservableCollection<ThemeDefinition> Themes { get; } = new(_themes);
+
+        private static string _userThemeFolderCache = "";
+        private static bool _userThemeFolderCreated;
 
         public static string UserThemeFolder
         {
             get
             {
                 string path = Path.Combine(App.ConfigFolder, "Themes");
-                try { Directory.CreateDirectory(path); } catch { }
+                if (!_userThemeFolderCreated || !string.Equals(_userThemeFolderCache, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(path);
+                        _userThemeFolderCache = path;
+                        _userThemeFolderCreated = true;
+                    }
+                    catch { }
+                }
                 return path;
             }
         }
 
         public static void Reload()
         {
-            var loaded = new List<ThemeDefinition>();
+            var builtins = LoadBuiltins().ToList();
+            var builtinIds = builtins.Select(t => t.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var theme in LoadBuiltins())
-                loaded.Add(theme);
+            var loaded = new List<ThemeDefinition>(builtins);
 
             foreach (var theme in LoadUserThemes())
             {
+                if (builtinIds.Contains(theme.Id))
+                {
+                    ThemeLog.Warn("Catalog", $"Ignored user theme '{theme.SourcePath}' attempting to shadow built-in ID '{theme.Id}'.");
+                    continue;
+                }
+
                 int existing = loaded.FindIndex(t =>
                     string.Equals(t.Id, theme.Id, StringComparison.OrdinalIgnoreCase));
 
@@ -79,10 +106,29 @@ namespace DesktopFences.Core.Theming
 
             if (sorted.Count == 0)
             {
-                var fallback = ThemeDefinition.Fallback.Clone();
+                var fallback = ThemeDefinition.Fallback;
                 fallback.IsBuiltIn = true;
                 sorted.Add(fallback);
             }
+
+            var byIdDict = new Dictionary<string, ThemeDefinition>(sorted.Count, StringComparer.OrdinalIgnoreCase);
+            var byNameDict = new Dictionary<string, ThemeDefinition>(sorted.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var theme in sorted)
+            {
+                byIdDict[theme.Id] = theme;
+                byNameDict.TryAdd(theme.Name, theme);
+            }
+
+            var defaultTheme = byIdDict.GetValueOrDefault("obsidian-prism")
+                ?? byIdDict.GetValueOrDefault("fluid-glass")
+                ?? sorted[0];
+
+            var newSnapshot = new CatalogSnapshot(
+                byIdDict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+                byNameDict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+                defaultTheme);
+
+            Interlocked.Exchange(ref _snapshot, newSnapshot);
 
             void ApplyLoaded()
             {
@@ -98,7 +144,7 @@ namespace DesktopFences.Core.Theming
 
             if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
             {
-                dispatcher.Invoke(ApplyLoaded);
+                dispatcher.BeginInvoke(ApplyLoaded);
             }
             else
             {
@@ -126,7 +172,6 @@ namespace DesktopFences.Core.Theming
 
                     theme.IsBuiltIn = true;
                     theme.SourcePath = null;
-
                     theme.Id = Slugify(string.IsNullOrWhiteSpace(theme.Id) ? theme.Name : theme.Id);
                 }
                 catch (Exception ex)
@@ -163,8 +208,16 @@ namespace DesktopFences.Core.Theming
         {
             try
             {
-                string json = File.ReadAllText(path);
-                var theme = JsonSerializer.Deserialize<ThemeDefinition>(json, ReadOptions);
+                var fileInfo = new FileInfo(path);
+                if (!fileInfo.Exists) return null;
+                if (fileInfo.Length > MaxJsonThemeBytes)
+                {
+                    LastImportProblem = $"Theme file exceeds the {MaxJsonThemeBytes / 1024} KB limit.";
+                    return null;
+                }
+
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var theme = JsonSerializer.Deserialize<ThemeDefinition>(fs, ReadOptions);
                 if (theme is null) return null;
 
                 theme.IsBuiltIn = false;
@@ -177,6 +230,13 @@ namespace DesktopFences.Core.Theming
                     ? Path.GetFileNameWithoutExtension(path)
                     : theme.Id);
 
+                if (!string.IsNullOrWhiteSpace(theme.LoopFile))
+                {
+                    string safeLoop = Path.GetFileName(theme.LoopFile);
+                    string ext = Path.GetExtension(safeLoop);
+                    theme.LoopFile = AllowedMediaExtensions.Contains(ext) ? safeLoop : null;
+                }
+
                 return theme;
             }
             catch (Exception ex)
@@ -186,58 +246,42 @@ namespace DesktopFences.Core.Theming
             }
         }
 
+        private static CatalogSnapshot EnsureLoaded()
+        {
+            var snap = _snapshot;
+            if (snap is null)
+            {
+                Reload();
+                snap = _snapshot!;
+            }
+            return snap;
+        }
+
         public static ThemeDefinition Get(string? idOrName)
         {
-            bool needsReload;
-            lock (_catalogLock)
-            {
-                needsReload = _themes.Count == 0;
-            }
-            if (needsReload) Reload();
+            var snap = EnsureLoaded();
 
             if (string.Equals(idOrName, "fluid-glass", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(idOrName, "Fluid Glass (Default)", StringComparison.OrdinalIgnoreCase))
             {
-                return Default;
+                return snap.DefaultTheme;
             }
 
             if (!string.IsNullOrWhiteSpace(idOrName))
             {
-                lock (_catalogLock)
-                {
-                    var byId = _themes.FirstOrDefault(t =>
-                        string.Equals(t.Id, idOrName, StringComparison.OrdinalIgnoreCase));
-                    if (byId is not null) return byId;
-
-                    var byName = _themes.FirstOrDefault(t =>
-                        string.Equals(t.Name, idOrName, StringComparison.OrdinalIgnoreCase));
-                    if (byName is not null) return byName;
-                }
+                if (snap.ById.TryGetValue(idOrName, out var byId)) return byId;
+                if (snap.ByName.TryGetValue(idOrName, out var byName)) return byName;
             }
 
-            return Default;
+            return snap.DefaultTheme;
         }
 
-        public static ThemeDefinition Default
-        {
-            get
-            {
-                lock (_catalogLock)
-                {
-                    return _themes.FirstOrDefault(t => t.Id == "obsidian-prism")
-                        ?? _themes.FirstOrDefault(t => t.Id == "fluid-glass")
-                        ?? _themes.FirstOrDefault()
-                        ?? ThemeDefinition.Fallback;
-                }
-            }
-        }
+        public static ThemeDefinition Default => EnsureLoaded().DefaultTheme;
 
         public static bool Exists(string id)
         {
-            lock (_catalogLock)
-            {
-                return _themes.Any(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase));
-            }
+            if (string.IsNullOrWhiteSpace(id)) return false;
+            return EnsureLoaded().ById.ContainsKey(id);
         }
 
         public static async Task<ThemeDefinition> SaveAsync(ThemeDefinition theme, string? newName = null,
@@ -257,15 +301,7 @@ namespace DesktopFences.Core.Theming
                 try { if (File.Exists(temp)) File.Delete(temp); } catch { }
             }
 
-            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
-            {
-                await dispatcher.InvokeAsync(Reload);
-            }
-            else
-            {
-                Reload();
-            }
-
+            Reload();
             return Get(copy.Id);
         }
 
@@ -285,15 +321,7 @@ namespace DesktopFences.Core.Theming
                 try { if (File.Exists(temp)) File.Delete(temp); } catch { }
             }
 
-            if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
-            {
-                dispatcher.Invoke(Reload);
-            }
-            else
-            {
-                Reload();
-            }
-
+            Reload();
             return Get(copy.Id);
         }
 
@@ -301,6 +329,7 @@ namespace DesktopFences.Core.Theming
             ThemeDefinition theme, string? newName, string? overwriteId = null)
         {
             ArgumentNullException.ThrowIfNull(theme);
+            var snap = EnsureLoaded();
 
             var copy = Clone(theme);
 
@@ -308,7 +337,10 @@ namespace DesktopFences.Core.Theming
 
             if (!string.IsNullOrWhiteSpace(overwriteId))
             {
-                copy.Id = Slugify(overwriteId!);
+                string slug = Slugify(overwriteId!);
+                if (snap.ById.TryGetValue(slug, out var existing) && existing.IsBuiltIn)
+                    slug = UniqueId(slug);
+                copy.Id = slug;
             }
             else if (theme.IsBuiltIn)
             {
@@ -320,14 +352,17 @@ namespace DesktopFences.Core.Theming
             else
             {
                 string baseId = Slugify(string.IsNullOrWhiteSpace(copy.Id) ? copy.Name : copy.Id);
-                copy.Id = string.IsNullOrWhiteSpace(copy.Id) ? UniqueId(baseId) : baseId;
+                if (string.IsNullOrWhiteSpace(copy.Id) || (snap.ById.TryGetValue(baseId, out var existing) && existing.IsBuiltIn))
+                    copy.Id = UniqueId(baseId);
+                else
+                    copy.Id = baseId;
             }
 
             copy.IsBuiltIn = false;
 
-            string path = Path.Combine(UserThemeFolder, copy.Id + ".json");
-            string fullPath = Path.GetFullPath(path);
             string userFolder = Path.GetFullPath(UserThemeFolder);
+            string path = Path.Combine(userFolder, copy.Id + ".json");
+            string fullPath = Path.GetFullPath(path);
             if (!fullPath.StartsWith(userFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Refusing to write theme outside user theme folder.");
 
@@ -336,15 +371,20 @@ namespace DesktopFences.Core.Theming
             return (copy, fullPath, JsonSerializer.Serialize(copy, WriteOptions));
         }
 
-        public static bool Delete(ThemeDefinition theme)
+        public static bool Delete(ThemeDefinition theme, bool deleteMedia = true)
         {
             if (theme is null || theme.IsBuiltIn) return false;
             if (string.IsNullOrWhiteSpace(theme.SourcePath)) return false;
 
             try
             {
-                if (File.Exists(theme.SourcePath)) File.Delete(theme.SourcePath);
-                DeleteThemeMediaFiles(theme.Id);
+                string userFolder = Path.GetFullPath(UserThemeFolder);
+                string fullSource = Path.GetFullPath(theme.SourcePath);
+                if (!fullSource.StartsWith(userFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                if (File.Exists(fullSource)) File.Delete(fullSource);
+                if (deleteMedia) DeleteThemeMediaFiles(theme.Id);
                 Reload();
                 return true;
             }
@@ -366,7 +406,7 @@ namespace DesktopFences.Core.Theming
             return false;
         }
 
-        private static void DeleteThemeMediaFiles(string? id)
+        internal static void DeleteThemeMediaFiles(string? id)
         {
             if (string.IsNullOrWhiteSpace(id)) return;
             try
@@ -382,11 +422,16 @@ namespace DesktopFences.Core.Theming
             catch { }
         }
 
-        public static async Task ExportAsync(ThemeDefinition theme, string destinationPath, string? mediaPath = null)
+        public static Task ExportAsync(ThemeDefinition theme, string destinationPath, string? mediaPath = null)
         {
             ArgumentNullException.ThrowIfNull(theme);
+            return Task.Run(() => ExportCore(theme, destinationPath, mediaPath));
+        }
 
+        private static void ExportCore(ThemeDefinition theme, string destinationPath, string? mediaPath)
+        {
             string staging = Path.Combine(Path.GetTempPath(), "ff_theme_" + Guid.NewGuid().ToString("N"));
+            string tempZip = $"{destinationPath}.{Guid.NewGuid():N}.tmp";
             Directory.CreateDirectory(staging);
 
             try
@@ -396,6 +441,10 @@ namespace DesktopFences.Core.Theming
 
                 if (!string.IsNullOrWhiteSpace(mediaPath) && File.Exists(mediaPath))
                 {
+                    var fi = new FileInfo(mediaPath);
+                    if (fi.Length > MaxSingleEntryBytes)
+                        throw new InvalidDataException($"Attached media exceeds the {MaxSingleEntryBytes / (1024 * 1024)} MB export limit.");
+
                     string mediaDir = Path.Combine(staging, "media");
                     Directory.CreateDirectory(mediaDir);
                     string mediaFileName = Path.GetFileName(mediaPath);
@@ -403,30 +452,37 @@ namespace DesktopFences.Core.Theming
                     payload.LoopFile = mediaFileName;
                 }
 
-                await File.WriteAllTextAsync(
+                File.WriteAllText(
                     Path.Combine(staging, "theme.json"),
                     JsonSerializer.Serialize(payload, WriteOptions));
 
-                if (File.Exists(destinationPath)) File.Delete(destinationPath);
-                ZipFile.CreateFromDirectory(staging, destinationPath, CompressionLevel.Optimal, false);
+                ZipFile.CreateFromDirectory(staging, tempZip, CompressionLevel.Optimal, false);
+                File.Move(tempZip, destinationPath, overwrite: true);
             }
             finally
             {
-                try { Directory.Delete(staging, true); } catch { }
+                try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+                try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
             }
         }
 
         public static async Task<ThemeDefinition?> ImportAsync(string sourcePath)
         {
-            if (!File.Exists(sourcePath)) return null;
+            LastImportProblem = null;
+            if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath)) return null;
 
+            return await Task.Run(() => ImportCore(sourcePath)).ConfigureAwait(false);
+        }
+
+        private static ThemeDefinition? ImportCore(string sourcePath)
+        {
             if (Path.GetExtension(sourcePath).Equals(".json", StringComparison.OrdinalIgnoreCase))
             {
                 var direct = TryLoadFile(sourcePath);
                 if (direct is null) return null;
                 string baseId = Slugify(string.IsNullOrWhiteSpace(direct.Id) ? direct.Name : direct.Id);
                 direct.Id = UniqueId(baseId);
-                return await SaveAsync(direct);
+                return Save(direct);
             }
 
             string staging = Path.Combine(Path.GetTempPath(), "ff_import_" + Guid.NewGuid().ToString("N"));
@@ -440,7 +496,11 @@ namespace DesktopFences.Core.Theming
                 if (!File.Exists(manifest))
                 {
                     manifest = Directory.GetFiles(staging, "*.json", SearchOption.AllDirectories).FirstOrDefault() ?? "";
-                    if (!File.Exists(manifest)) return null;
+                    if (!File.Exists(manifest))
+                    {
+                        LastImportProblem = "Theme package did not contain a theme.json manifest.";
+                        return null;
+                    }
                 }
 
                 var imported = TryLoadFile(manifest);
@@ -452,27 +512,43 @@ namespace DesktopFences.Core.Theming
                 string mediaDir = Path.Combine(staging, "media");
                 if (Directory.Exists(mediaDir))
                 {
-                    string target = Path.Combine(UserThemeFolder, "media");
-                    Directory.CreateDirectory(target);
-                    foreach (string file in Directory.GetFiles(mediaDir))
+                    var allowedFiles = Directory.GetFiles(mediaDir)
+                        .Where(f => AllowedMediaExtensions.Contains(Path.GetExtension(f)))
+                        .ToList();
+
+                    string? chosen = null;
+                    if (!string.IsNullOrWhiteSpace(imported.LoopFile))
                     {
-                        string ext = Path.GetExtension(file);
-                        if (!AllowedMediaExtensions.Contains(ext)) continue;
-                        string destFileName = $"{imported.Id}_{Path.GetFileName(file)}";
-                        try
-                        {
-                            File.Copy(file, Path.Combine(target, destFileName), overwrite: true);
-                            imported.LoopFile = destFileName;
-                        }
-                        catch { }
+                        chosen = allowedFiles.FirstOrDefault(f =>
+                            string.Equals(Path.GetFileName(f), imported.LoopFile, StringComparison.OrdinalIgnoreCase));
+                    }
+                    chosen ??= allowedFiles.FirstOrDefault(f =>
+                        Path.GetExtension(f).Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                        Path.GetExtension(f).Equals(".webm", StringComparison.OrdinalIgnoreCase))
+                        ?? allowedFiles.FirstOrDefault();
+
+                    if (chosen is not null)
+                    {
+                        string target = Path.Combine(UserThemeFolder, "media");
+                        Directory.CreateDirectory(target);
+                        string destFileName = $"{imported.Id}_{Path.GetFileName(chosen)}";
+                        File.Copy(chosen, Path.Combine(target, destFileName), overwrite: true);
+                        imported.LoopFile = destFileName;
+                    }
+                    else
+                    {
+                        imported.LoopFile = null;
                     }
                 }
+                else
+                {
+                    imported.LoopFile = null;
+                }
 
-                return await SaveAsync(imported);
+                return Save(imported);
             }
             catch (InvalidDataException ex)
             {
-
                 ThemeLog.Warn("Import", $"Refused '{Path.GetFileName(sourcePath)}': {ex.Message}");
                 LastImportProblem = ex.Message;
                 return null;
@@ -489,10 +565,10 @@ namespace DesktopFences.Core.Theming
             }
         }
 
-        private const int    MaxArchiveEntries      = 64;
-        private const long   MaxTotalUncompressed   = 64L * 1024 * 1024;
-        private const long   MaxSingleEntryBytes    = 48L * 1024 * 1024;
-        private const double MaxCompressionRatio    = 120.0;
+        private const int MaxArchiveEntries = 64;
+        private const long MaxTotalUncompressed = 64L * 1024 * 1024;
+        private const long MaxSingleEntryBytes = 48L * 1024 * 1024;
+        private const double MaxCompressionRatio = 120.0;
 
         private static void ExtractSafely(string archivePath, string destination)
         {
@@ -506,65 +582,146 @@ namespace DesktopFences.Core.Theming
                     $"Theme package has {archive.Entries.Count} entries; the limit is {MaxArchiveEntries}.");
 
             long declaredTotal = 0;
-            foreach (ZipArchiveEntry e in archive.Entries) declaredTotal += e.Length;
+            foreach (ZipArchiveEntry e in archive.Entries)
+            {
+                if (e.Length < 0 || e.Length > MaxSingleEntryBytes)
+                    throw new InvalidDataException($"'{e.FullName}' has an invalid or oversized declared length.");
+                try { declaredTotal = checked(declaredTotal + e.Length); }
+                catch (OverflowException)
+                {
+                    throw new InvalidDataException("Theme package declared total size overflowed.");
+                }
+            }
 
             if (declaredTotal > MaxTotalUncompressed)
                 throw new InvalidDataException(
                     $"Theme package expands to {declaredTotal / (1024 * 1024)} MB; the limit is {MaxTotalUncompressed / (1024 * 1024)} MB.");
 
             long written = 0;
-            byte[] buffer = new byte[81920];
-
-            foreach (ZipArchiveEntry entry in archive.Entries)
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+            try
             {
-                if (string.IsNullOrEmpty(entry.Name)) continue;
-
-                string target = Path.GetFullPath(Path.Combine(root, entry.FullName));
-
-                if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException(
-                        $"Theme package tried to write outside its folder ('{entry.FullName}').");
-
-                if (entry.Length > MaxSingleEntryBytes)
-                    throw new InvalidDataException(
-                        $"'{entry.FullName}' is {entry.Length / (1024 * 1024)} MB; the limit is {MaxSingleEntryBytes / (1024 * 1024)} MB.");
-
-                if (entry.CompressedLength > 0 &&
-                    (double)entry.Length / entry.CompressedLength > MaxCompressionRatio)
-                    throw new InvalidDataException(
-                        $"'{entry.FullName}' is compressed {entry.Length / entry.CompressedLength}x, which is not plausible for theme content.");
-
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-
-                using var input = entry.Open();
-                using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
-                long entryWritten = 0;
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                foreach (ZipArchiveEntry entry in archive.Entries)
                 {
-                    entryWritten += read;
-                    if (entryWritten > MaxSingleEntryBytes)
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
+
+                    string target = Path.GetFullPath(Path.Combine(root, entry.FullName));
+
+                    if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException(
-                            $"'{entry.FullName}' exceeded the {MaxSingleEntryBytes / (1024 * 1024)} MB limit while extracting.");
+                            $"Theme package tried to write outside its folder ('{entry.FullName}').");
 
-                    written += read;
-                    if (written > MaxTotalUncompressed)
-                        throw new InvalidDataException("Theme package exceeded its size budget while extracting.");
+                    if (entry.CompressedLength > 0 &&
+                        (double)entry.Length / entry.CompressedLength > MaxCompressionRatio)
+                        throw new InvalidDataException(
+                            $"'{entry.FullName}' is compressed {entry.Length / entry.CompressedLength}x, which is not plausible for theme content.");
 
-                    output.Write(buffer, 0, read);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+
+                    using var input = entry.Open();
+                    using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
+                    long entryWritten = 0;
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        entryWritten += read;
+                        if (entryWritten > MaxSingleEntryBytes)
+                            throw new InvalidDataException(
+                                $"'{entry.FullName}' exceeded the {MaxSingleEntryBytes / (1024 * 1024)} MB limit while extracting.");
+
+                        written += read;
+                        if (written > MaxTotalUncompressed)
+                            throw new InvalidDataException("Theme package exceeded its size budget while extracting.");
+
+                        output.Write(buffer, 0, read);
+                    }
                 }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
 
         public static ThemeDefinition Clone(ThemeDefinition source)
         {
-            string json = JsonSerializer.Serialize(source, WriteOptions);
-            var clone = JsonSerializer.Deserialize<ThemeDefinition>(json, ReadOptions)!;
-            clone.IsBuiltIn = source.IsBuiltIn;
-            clone.SourcePath = source.SourcePath;
-            clone.Pattern = source.Pattern;
-            clone.LoopFile = source.LoopFile;
-            return clone;
+            ArgumentNullException.ThrowIfNull(source);
+            var sc = source.Colors ?? new ThemeColors();
+            var ss = source.Shape ?? new ThemeShape();
+            var st = source.Typography ?? new ThemeTypography();
+            var sm = source.Motion ?? new ThemeMotion();
+
+            return new ThemeDefinition
+            {
+                Schema = source.Schema,
+                Id = source.Id,
+                Name = source.Name,
+                Author = source.Author,
+                Description = source.Description,
+                Category = source.Category,
+                BaseTheme = source.BaseTheme,
+                Pattern = source.Pattern,
+                LoopFile = source.LoopFile,
+                IsBuiltIn = source.IsBuiltIn,
+                SourcePath = source.SourcePath,
+                Colors = new ThemeColors
+                {
+                    Primary = sc.Primary,
+                    PrimaryHover = sc.PrimaryHover,
+                    PrimaryPressed = sc.PrimaryPressed,
+                    Secondary = sc.Secondary,
+                    Accent = sc.Accent,
+                    Background = sc.Background,
+                    Surface = sc.Surface,
+                    SurfaceSubtle = sc.SurfaceSubtle,
+                    SurfaceHover = sc.SurfaceHover,
+                    SurfaceSelected = sc.SurfaceSelected,
+                    Header = sc.Header,
+                    Border = sc.Border,
+                    BorderSubtle = sc.BorderSubtle,
+                    FocusRing = sc.FocusRing,
+                    TextPrimary = sc.TextPrimary,
+                    TextSecondary = sc.TextSecondary,
+                    TextDisabled = sc.TextDisabled,
+                    TextOnAccent = sc.TextOnAccent,
+                    Glyph = sc.Glyph,
+                    GlyphHover = sc.GlyphHover,
+                    Success = sc.Success,
+                    Error = sc.Error,
+                    Warning = sc.Warning,
+                    Info = sc.Info,
+                    SelectionFill = sc.SelectionFill,
+                    SelectionStroke = sc.SelectionStroke,
+                    DropTarget = sc.DropTarget,
+                    ScrollThumb = sc.ScrollThumb,
+                    ScrollThumbHover = sc.ScrollThumbHover,
+                    ScrollThumbActive = sc.ScrollThumbActive
+                },
+                Shape = new ThemeShape
+                {
+                    CornerRadius = ss.CornerRadius,
+                    CornerRadiusSmall = ss.CornerRadiusSmall,
+                    BorderThickness = ss.BorderThickness,
+                    ShadowOpacity = ss.ShadowOpacity,
+                    ShadowBlurRadius = ss.ShadowBlurRadius,
+                    ShadowDepth = ss.ShadowDepth
+                },
+                Typography = new ThemeTypography
+                {
+                    FontFamily = st.FontFamily,
+                    MonospaceFontFamily = st.MonospaceFontFamily,
+                    Scale = st.Scale,
+                    TitleWeight = st.TitleWeight
+                },
+                Motion = new ThemeMotion
+                {
+                    SpeedMultiplier = sm.SpeedMultiplier,
+                    RollUpStyle = sm.RollUpStyle,
+                    ThemeTransitionMs = sm.ThemeTransitionMs
+                },
+                CustomTokens = new Dictionary<string, string>(
+                    source.CustomTokens ?? [], StringComparer.OrdinalIgnoreCase)
+            };
         }
 
         public static string Slugify(string input)
@@ -577,13 +734,14 @@ namespace DesktopFences.Core.Theming
         private static string UniqueId(string baseId)
         {
             baseId = Slugify(baseId);
-            if (!Exists(baseId) && !File.Exists(Path.Combine(UserThemeFolder, baseId + ".json")))
+            string folder = UserThemeFolder;
+            if (!Exists(baseId) && !File.Exists(Path.Combine(folder, baseId + ".json")))
                 return baseId;
 
             for (int i = 2; i < 1000; i++)
             {
                 string candidate = $"{baseId}-{i}";
-                if (!Exists(candidate) && !File.Exists(Path.Combine(UserThemeFolder, candidate + ".json")))
+                if (!Exists(candidate) && !File.Exists(Path.Combine(folder, candidate + ".json")))
                     return candidate;
             }
             return $"{baseId}-{Guid.NewGuid():N}";

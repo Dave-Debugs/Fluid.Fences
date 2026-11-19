@@ -4,20 +4,29 @@
 
 **Fluid Fences** is a fast, lightweight, open-source desktop organizer for Windows 10 and 11. It lets you group your desktop shortcuts, files, and folders into sleek, translucent glass containers ("fences") that stay right on your wallpaper.
 
-![Version](https://img.shields.io/badge/version-2.3.6-blue.svg)
+![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(64--bit)-0078D6)
 ![WCAG AAA](https://img.shields.io/badge/accessibility-100%25%20WCAG%20AAA-brightgreen.svg)
 
 ---
 
+## What's New in v2.4.0
+
+- **Upgraded to .NET 10 LTS**: Moved the app and CI builds from .NET 8 to .NET 10 LTS, updated Win32 interop to source-generated `[LibraryImport]`, and included the unit test suite (`99` tests) directly in the repo.
+- **Smaller Binary & Faster UI**: Cleaned out over 33 MB of unused assets (bringing `FluidFences.dll` down from 6.68 MB to 593 KB), moved theme archive import/export and Folder Portal reconnect checks off the UI thread, and sped up palette extraction, icon loading, brush caching, and background video clipping.
+- **Security & Config Safety Fixes**: Replaced `WScript.Shell` COM calls with a managed `.lnk`/`.url` parser that blocks UNC/NTLM leaks and Folder Portal warning bypasses, added strict theme archive size checks, verified updater redirects, removed the old fallback updater URL, and made sure transient file lock errors don't overwrite your config.
+- **Bug & Multi-Monitor Fixes**: Restored missing `Archives` and `Code & Scripts` categories in Auto-Organize, fixed Fence and Theme Delete Undo in Settings, fixed mixed-DPI screen docking/snapping, fixed `Ctrl+Drag` file copying and `Escape` when tearing off tabs, and added 2 MB log rotation.
+
+---
+
 ## What's New in v2.3.6
 
-- **Refined Fence Resizing & Hover Debounce**: Expanded edge hit targets (8 DIPs on borders, 14×14 DIPs on corners) and tuned the roll-up hover debounce to 150ms for effortless edge resizing without premature collapse.
-- **Real-Time Windows 11 DWM Border Sync**: Window border outlines in the Settings dialog now update immediately via DWM APIs upon clicking theme swatches without requiring focus switching.
-- **Auto-Organize Safety Confirmation**: Cleaned up desktop file organization with a clear confirmation dialog before moving desktop items into categorized fences.
-- **Hardened Stability & Concurrency**: Eliminated window-close race conditions during shutdown and resolved concurrent wallpaper sampling locks across multi-monitor environments.
-- **Zero-Warning Code Quality**: Cleaned up all compiler and IDE code-style diagnostics with expanded unit test coverage across all core services (47 automated tests passing).
+- **Fence Resizing & Roll-Up Timing**: Expanded edge resize handles to 8 DIPs (14x14 DIPs on corners) and set the roll-up hover delay to 150ms so grabbing edges doesn't accidentally collapse the fence.
+- **Instant Windows 11 Border Color Updates**: The Settings window border now updates right away via DWM when you pick a theme without needing to click away and back.
+- **Auto-Organize Confirmation**: Added a confirmation prompt before sorting desktop files into category fences.
+- **Shutdown & Wallpaper Fixes**: Fixed close-time race conditions and multi-monitor wallpaper sampling locks.
+- **Code Cleanup & Tests**: Cleared compiler and IDE analyzer warnings and expanded unit test coverage across core services.
 
 ---
 
@@ -37,8 +46,8 @@
 | **Smart Auto-Organize** | Pulls loose files off your desktop and neatly sorts them into separate fences based on file type (or your own custom file extension rules). |
 | **Tabbed Fences** | Add multiple tabs to a single fence to group projects together. Drag a tab out to turn it into its own fence, or drop one fence onto another to merge them. |
 | **Folder Portals** | Mirror any folder on your PC (like *Downloads* or *Projects*) directly on your desktop without moving the original files. |
-| **30 Themes + Motion Loops** | Pick from 30 handcrafted dark and light themes with optional animated background loops and adjustable opacity. |
-| **Auto-Match Wallpaper** | Automatically tints your fences to match your desktop wallpaper—and updates automatically whenever your wallpaper changes. |
+| **30 Themes + Motion Loops** | Pick from 30 built-in dark and light themes with optional animated background loops and adjustable opacity. |
+| **Auto-Match Wallpaper** | Automatically tints your fences to match your desktop wallpaper, and updates when your wallpaper changes. |
 | **Ghost Mode & Roll-Up** | Keep fences invisible until you hover over them (**Ghost Mode**), or double-click any fence's title bar to roll it up into a compact strip. |
 | **Zen Mode (`Ctrl+Alt+Z`)** | Instantly hide or show all fences on your desktop with a single keyboard shortcut. |
 | **Layout Snapshots** | Save your exact fence positions and sizes across all monitors and restore them anytime with one click. |
@@ -101,7 +110,7 @@ Fluid Fences lives quietly in your **Windows System Tray** (bottom-right corner 
 
 ## Installation
 
-1. Download the latest **`FluidFences-2.3.6-Setup.exe`** installer from the [Releases page](https://github.com/Dave-Debugs/Fluid.Fences/releases).
+1. Download the latest **`FluidFences-2.4.0-Setup.exe`** installer from the [Releases page](https://github.com/Dave-Debugs/Fluid.Fences/releases).
 2. Run the installer and launch **Fluid Fences**.
 
 - **No extra downloads needed**: The installer is 100% self-contained (you do not need to install .NET separately).
@@ -112,18 +121,18 @@ Fluid Fences lives quietly in your **Windows System Tray** (bottom-right corner 
 
 ## Building from Source
 
-To build Fluid Fences yourself, install the **.NET 8 SDK** (or Visual Studio 2022 / 2026) and run:
+To build Fluid Fences yourself, install the **.NET 10 SDK** (or Visual Studio 2026) and run:
 
 ```powershell
 git clone https://github.com/Dave-Debugs/Fluid.Fences.git
 cd Fluid.Fences
-dotnet build DesktopFences/DesktopFences.csproj -c Release
+dotnet build DesktopFences.csproj -c Release
 ```
 
 To run the automated unit test suite:
 
 ```powershell
-dotnet test DesktopFences.Tests/DesktopFences.Tests.csproj -c Release
+dotnet test tests/DesktopFences.Tests/DesktopFences.Tests.csproj -c Release
 ```
 
 ---

@@ -361,9 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-# --- Fluid Fences: local working files, not for distribution ---
+# Local files
 scratch/
 Properties/
-Assets/NewIcon/
-Assets/FluidFences16BitLogo_clean.png
 

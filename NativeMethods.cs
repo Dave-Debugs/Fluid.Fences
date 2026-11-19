@@ -54,6 +54,7 @@ namespace DesktopFences
             DWMWA_BORDER_COLOR = 34
         }
         internal enum DWM_WINDOW_CORNER_PREFERENCE { DWMWCP_DEFAULT = 0, DWMWCP_DONOTROUND = 1, DWMWCP_ROUND = 2, DWMWCP_ROUNDSMALL = 3 }
+        internal const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
 
         [LibraryImport("dwmapi.dll")]
         internal static partial int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -80,11 +81,11 @@ namespace DesktopFences
             return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, nIndex) : GetWindowLong32(hWnd, nIndex);
         }
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
-        private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
+        [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+        private static partial IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
-        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+        [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+        private static partial IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 
         public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
         {
@@ -93,11 +94,11 @@ namespace DesktopFences
                 : new IntPtr(SetWindowLong32(hWnd, nIndex, unchecked((int)(nint)dwNewLong)));
         }
 
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
-        private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+        [LibraryImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+        private static partial int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
 
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
-        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+        private static partial IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
         [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -145,17 +146,17 @@ namespace DesktopFences
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string szTypeName;
         }
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        [DllImport("shell32.dll", EntryPoint = "SHGetFileInfoW", CharSet = CharSet.Unicode)]
         internal static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbSizeFileInfo, uint uFlags);
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        internal static extern int SHDefExtractIcon(string pszIconFile, int iIndex, uint uFlags, out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIconSize);
+        [LibraryImport("shell32.dll", EntryPoint = "SHDefExtractIconW", StringMarshalling = StringMarshalling.Utf16)]
+        internal static partial int SHDefExtractIcon(string pszIconFile, int iIndex, uint uFlags, out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIconSize);
 
         [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool DestroyIcon(IntPtr hIcon);
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         private struct SHFILEOPSTRUCT32
         {
             public IntPtr hwnd;
@@ -168,7 +169,7 @@ namespace DesktopFences
             public IntPtr lpszProgressTitle;
         }
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        [StructLayout(LayoutKind.Sequential)]
         private struct SHFILEOPSTRUCT64
         {
             public IntPtr hwnd;
@@ -181,23 +182,27 @@ namespace DesktopFences
             public IntPtr lpszProgressTitle;
         }
 
-        [DllImport("shell32.dll", EntryPoint = "SHFileOperationW", CharSet = CharSet.Unicode)]
-        private static extern int SHFileOperation32(ref SHFILEOPSTRUCT32 FileOp);
+        [LibraryImport("shell32.dll", EntryPoint = "SHFileOperationW")]
+        private static partial int SHFileOperation32(ref SHFILEOPSTRUCT32 FileOp);
 
-        [DllImport("shell32.dll", EntryPoint = "SHFileOperationW", CharSet = CharSet.Unicode)]
-        private static extern int SHFileOperation64(ref SHFILEOPSTRUCT64 FileOp);
+        [LibraryImport("shell32.dll", EntryPoint = "SHFileOperationW")]
+        private static partial int SHFileOperation64(ref SHFILEOPSTRUCT64 FileOp);
 
         private static string EnsureDoubleNullTerminated(string value) =>
             value.EndsWith("\0\0", StringComparison.Ordinal) ? value : value.TrimEnd('\0') + "\0\0";
 
         internal static int PerformFileOperation(IntPtr hwnd, uint wFunc, string? pFrom, string? pTo, ushort fFlags)
+            => PerformFileOperation(hwnd, wFunc, pFrom, pTo, fFlags, out _);
+
+        internal static int PerformFileOperation(IntPtr hwnd, uint wFunc, string? pFrom, string? pTo, ushort fFlags, out bool aborted)
         {
+            aborted = false;
             IntPtr pFromPtr = IntPtr.Zero;
             IntPtr pToPtr = IntPtr.Zero;
             try
             {
                 if (pFrom != null) pFromPtr = Marshal.StringToHGlobalUni(EnsureDoubleNullTerminated(pFrom));
-                if (pTo   != null) pToPtr   = Marshal.StringToHGlobalUni(EnsureDoubleNullTerminated(pTo));
+                if (pTo != null) pToPtr = Marshal.StringToHGlobalUni(EnsureDoubleNullTerminated(pTo));
 
                 if (IntPtr.Size == 4)
                 {
@@ -209,7 +214,9 @@ namespace DesktopFences
                         pTo = pToPtr,
                         fFlags = fFlags
                     };
-                    return SHFileOperation32(ref shf);
+                    int res = SHFileOperation32(ref shf);
+                    aborted = shf.fAnyOperationsAborted != 0;
+                    return res;
                 }
                 else
                 {
@@ -221,7 +228,9 @@ namespace DesktopFences
                         pTo = pToPtr,
                         fFlags = fFlags
                     };
-                    return SHFileOperation64(ref shf);
+                    int res = SHFileOperation64(ref shf);
+                    aborted = shf.fAnyOperationsAborted != 0;
+                    return res;
                 }
             }
             finally

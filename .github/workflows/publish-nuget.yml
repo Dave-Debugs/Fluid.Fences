@@ -21,7 +21,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
+
+      - name: Run Tests
+        run: dotnet test tests/DesktopFences.Tests/DesktopFences.Tests.csproj -c Release
 
       - name: NuGet Login (Trusted Publishing OIDC)
         id: login
@@ -35,7 +38,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           $rawTag = $env:RELEASE_TAG
-          $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.3.6' }
+          $version = if ($rawTag) { $rawTag.TrimStart('v') } else { '2.4.0' }
           dotnet build DesktopFences.csproj -c Release -p:PackageVersion=$version
 
       - name: Publish to NuGet.org

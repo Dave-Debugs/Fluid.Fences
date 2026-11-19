@@ -7,7 +7,6 @@ using System.Windows.Media;
 
 namespace DesktopFences
 {
-
     public sealed class RabbitEasterEgg : Window
     {
         private readonly MediaElement _media;
@@ -47,12 +46,30 @@ namespace DesktopFences
             Deactivated += (_, _) => SafeClose();
         }
 
+        private void ReleaseMedia()
+        {
+            try
+            {
+                _media.Stop();
+                _media.Close();
+                _media.Source = null;
+            }
+            catch { }
+        }
+
         private void SafeClose()
         {
             if (_closing) return;
             _closing = true;
-            try { _media.Stop(); _media.Close(); _media.Source = null; } catch { }
+            ReleaseMedia();
             try { Close(); } catch { }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _closing = true;
+            ReleaseMedia();
+            base.OnClosed(e);
         }
 
         private void StartPlayback()

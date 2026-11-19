@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -11,7 +9,6 @@ using System.Windows.Media.Imaging;
 
 namespace DesktopFences.Core.Theming
 {
-
     public enum WallpaperSource
     {
         None,
@@ -27,9 +24,9 @@ namespace DesktopFences.Core.Theming
         private const int SPI_GETDESKWALLPAPER = 0x0073;
         private const int COLORONCOLOR = 3;
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SystemParametersInfoW")]
+        [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true, EntryPoint = "SystemParametersInfoW")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SystemParametersInfo(int uAction, int uParam, [Out] char[] lpvParam, int fuWinIni);
+        private static partial bool SystemParametersInfo(int uAction, int uParam, [Out] char[] lpvParam, int fuWinIni);
 
         [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, SetLastError = true, EntryPoint = "FindWindowW")]
         private static partial IntPtr FindWindow(string? lpClassName, string? lpWindowName);
@@ -73,10 +70,14 @@ namespace DesktopFences.Core.Theming
         [LibraryImport("gdi32.dll")]
         private static partial int SetStretchBltMode(IntPtr hdc, int mode);
 
-        [LibraryImport("gdi32.dll")]
+        [LibraryImport("gdi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static partial bool BitBlt(IntPtr dest, int dx, int dy, int w, int h,
-                                           IntPtr src, int sx, int sy, uint rop);
+        private static partial bool StretchBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
+                                               IntPtr hdcSrc, int xSrc, int ySrc, int wSrc, int hSrc, uint rop);
+
+        [LibraryImport("user32.dll", SetLastError = true, EntryPoint = "SendMessageTimeoutW")]
+        private static partial IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam,
+                                                         uint flags, uint timeout, out IntPtr result);
 
         private const uint SRCCOPY = 0x00CC0020;
 
@@ -100,47 +101,6 @@ namespace DesktopFences.Core.Theming
             return null;
         }
 
-        public static WallpaperSample? CaptureMany(int frames = 4, int delayMs = 320,
-                                                   bool allowScreenCapture = false,
-                                                   uint? monitorIndex = null,
-                                                   Rect? region = null)
-        {
-            frames = Math.Clamp(frames, 1, 12);
-
-            List<byte>? pooled = null;
-            int width = 0, height = 0;
-            WallpaperSource source = WallpaperSource.None;
-
-            for (int i = 0; i < frames; i++)
-            {
-                var frame = Capture(allowScreenCapture, monitorIndex, region);
-                if (frame is null) continue;
-
-                if (frame.Source == WallpaperSource.StaticFile) return frame;
-
-                if (pooled is null)
-                {
-                    width = frame.Width;
-                    height = frame.Height;
-                    source = frame.Source;
-                    pooled = new List<byte>(frames * frame.Bgra.Length);
-                }
-                if (frame.Width != width || frame.Height != height) continue;
-
-                pooled.AddRange(frame.Bgra);
-
-                if (i < frames - 1) System.Threading.Thread.Sleep(delayMs);
-            }
-
-            if (pooled is null || pooled.Count == 0 || width == 0) return null;
-
-            int pooledHeight = pooled.Count / 4 / width;
-            ThemeLog.Info("WallpaperSampler",
-                $"pooled {pooled.Count / 4 / (width * height)} frame(s) from {source}");
-
-            return new WallpaperSample(pooled.ToArray(), width, pooledHeight, source);
-        }
-
         public static async Task<WallpaperSample?> CaptureManyAsync(
             int frames = 5,
             int delayMs = 300,
@@ -151,7 +111,9 @@ namespace DesktopFences.Core.Theming
         {
             frames = Math.Clamp(frames, 1, 12);
 
-            List<byte>? pooled = null;
+            byte[]? pooled = null;
+            int offset = 0;
+            int frameBytes = 0;
             int width = 0, height = 0;
             WallpaperSource source = WallpaperSource.None;
 
@@ -169,24 +131,27 @@ namespace DesktopFences.Core.Theming
                 {
                     width = frame.Width;
                     height = frame.Height;
+                    frameBytes = frame.Bgra.Length;
                     source = frame.Source;
-                    pooled = new List<byte>(frames * frame.Bgra.Length);
+                    pooled = new byte[frames * frameBytes];
                 }
-                if (frame.Width != width || frame.Height != height) continue;
+                if (frame.Width != width || frame.Height != height || frame.Bgra.Length != frameBytes) continue;
 
-                pooled.AddRange(frame.Bgra);
+                Buffer.BlockCopy(frame.Bgra, 0, pooled, offset, frameBytes);
+                offset += frameBytes;
 
                 if (i < frames - 1)
                     await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
 
-            if (pooled is null || pooled.Count == 0 || width == 0) return null;
+            if (pooled is null || offset == 0 || width == 0) return null;
 
-            int pooledHeight = pooled.Count / 4 / width;
+            byte[] finalBytes = offset == pooled.Length ? pooled : pooled[..offset];
+            int pooledHeight = offset / 4 / width;
             ThemeLog.Info("WallpaperSampler",
-                $"pooled {pooled.Count / 4 / (width * height)} frame(s) from {source}");
+                $"pooled {offset / frameBytes} frame(s) from {source}");
 
-            return new WallpaperSample(pooled.ToArray(), width, pooledHeight, source);
+            return new WallpaperSample(finalBytes, width, pooledHeight, source);
         }
 
         private static WallpaperSample? TryScreenCapture(Rect? region = null)
@@ -217,7 +182,11 @@ namespace DesktopFences.Core.Theming
                 int captureH = Math.Max(1, (int)(srcH * (captureW / (double)srcW)));
 
                 memoryDc = CreateCompatibleDC(screenDc);
+                if (memoryDc == IntPtr.Zero) return null;
+
                 bitmap = CreateCompatibleBitmap(screenDc, captureW, captureH);
+                if (bitmap == IntPtr.Zero) return null;
+
                 previous = SelectObject(memoryDc, bitmap);
 
                 _ = SetStretchBltMode(memoryDc, COLORONCOLOR);
@@ -227,7 +196,7 @@ namespace DesktopFences.Core.Theming
                     return null;
 
                 var source = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
-                    bitmap, IntPtr.Zero, System.Windows.Int32Rect.Empty,
+                    bitmap, IntPtr.Zero, Int32Rect.Empty,
                     BitmapSizeOptions.FromEmptyOptions());
                 source.Freeze();
 
@@ -252,18 +221,12 @@ namespace DesktopFences.Core.Theming
             }
             finally
             {
-
                 if (previous != IntPtr.Zero) _ = SelectObject(memoryDc, previous);
                 if (bitmap != IntPtr.Zero) _ = DeleteObject(bitmap);
                 if (memoryDc != IntPtr.Zero) _ = DeleteDC(memoryDc);
                 if (screenDc != IntPtr.Zero) _ = ReleaseDC(IntPtr.Zero, screenDc);
             }
         }
-
-        [LibraryImport("gdi32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static partial bool StretchBlt(IntPtr hdcDest, int xDest, int yDest, int wDest, int hDest,
-                                               IntPtr hdcSrc, int xSrc, int ySrc, int wSrc, int hSrc, uint rop);
 
         [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"),
          InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -279,7 +242,6 @@ namespace DesktopFences.Core.Theming
             string GetMonitorDevicePathAt(uint monitorIndex);
 
             uint GetMonitorDevicePathCount();
-
         }
 
         [ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")]
@@ -354,10 +316,10 @@ namespace DesktopFences.Core.Theming
 
                 if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
 
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
-                bitmap.UriSource = new Uri(path, UriKind.Absolute);
-
+                bitmap.StreamSource = fs;
                 bitmap.DecodePixelWidth = 320;
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
                 bitmap.EndInit();
@@ -400,7 +362,11 @@ namespace DesktopFences.Core.Theming
                 if (hdcSource == IntPtr.Zero) return null;
 
                 hdcMemory = CreateCompatibleDC(hdcSource);
+                if (hdcMemory == IntPtr.Zero) return null;
+
                 hBitmap = CreateCompatibleBitmap(hdcSource, captureW, captureH);
+                if (hBitmap == IntPtr.Zero) return null;
+
                 oldObject = SelectObject(hdcMemory, hBitmap);
 
                 _ = SetStretchBltMode(hdcMemory, COLORONCOLOR);
@@ -409,7 +375,7 @@ namespace DesktopFences.Core.Theming
                     return null;
 
                 var bmpSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
-                    hBitmap, IntPtr.Zero, System.Windows.Int32Rect.Empty,
+                    hBitmap, IntPtr.Zero, Int32Rect.Empty,
                     BitmapSizeOptions.FromEmptyOptions());
                 bmpSource.Freeze();
 
@@ -439,7 +405,7 @@ namespace DesktopFences.Core.Theming
                 if (oldObject != IntPtr.Zero) _ = SelectObject(hdcMemory, oldObject);
                 if (hBitmap != IntPtr.Zero) _ = DeleteObject(hBitmap);
                 if (hdcMemory != IntPtr.Zero) _ = DeleteDC(hdcMemory);
-                if (hdcSource != IntPtr.Zero && source != IntPtr.Zero) _ = ReleaseDC(source, hdcSource);
+                if (hdcSource != IntPtr.Zero) _ = ReleaseDC(source, hdcSource);
             }
         }
 
@@ -450,7 +416,6 @@ namespace DesktopFences.Core.Theming
                 IntPtr progman = FindWindow("Progman", null);
                 if (progman != IntPtr.Zero)
                 {
-
                     _ = SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0, 1000, out _);
 
                     IntPtr worker = IntPtr.Zero;
@@ -470,10 +435,6 @@ namespace DesktopFences.Core.Theming
             return GetDesktopWindow();
         }
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SendMessageTimeoutW")]
-        private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam,
-                                                        uint flags, uint timeout, out IntPtr result);
-
         private static bool IsEffectivelyBlank(byte[] bgra)
         {
             if (bgra.Length < 64) return true;
@@ -489,7 +450,18 @@ namespace DesktopFences.Core.Theming
             return (maxR - minR) < 6 && (maxG - minG) < 6 && (maxB - minB) < 6;
         }
 
-        internal static IntPtr ExcludedWindowHandle { get; set; }
+        private static nint _excludedWindowHandle;
+
+        internal static IntPtr ExcludedWindowHandle
+        {
+            get => Volatile.Read(ref _excludedWindowHandle);
+            set => Volatile.Write(ref _excludedWindowHandle, value);
+        }
+
+        internal static void ClearExcludedWindowHandleIfMatches(IntPtr hwnd)
+        {
+            Interlocked.CompareExchange(ref _excludedWindowHandle, 0, hwnd);
+        }
 
         private static void MaskExcludedWindow(byte[] pixels, int captureW, int captureH, int stride,
                                                 int srcX, int srcY, int srcW, int srcH)
@@ -516,12 +488,6 @@ namespace DesktopFences.Core.Theming
             }
         }
 
-        public static Color? AverageColor(bool allowScreenCapture = false)
-        {
-            var sample = Capture(allowScreenCapture);
-            return sample is null ? null : AverageColorFromSample(sample);
-        }
-
         public static Color? AverageColorFromSample(WallpaperSample sample)
         {
             if (sample is null) return null;
@@ -531,9 +497,9 @@ namespace DesktopFences.Core.Theming
             for (int i = 0; i + 3 < sample.Bgra.Length; i += 4)
             {
                 if (sample.Bgra[i + 3] < 8) continue;
-                r += ColorSpace.ToLinear(sample.Bgra[i + 2] / 255.0);
-                g += ColorSpace.ToLinear(sample.Bgra[i + 1] / 255.0);
-                b += ColorSpace.ToLinear(sample.Bgra[i] / 255.0);
+                r += ColorSpace.ToLinear(sample.Bgra[i + 2]);
+                g += ColorSpace.ToLinear(sample.Bgra[i + 1]);
+                b += ColorSpace.ToLinear(sample.Bgra[i]);
                 n++;
             }
             if (n == 0) return null;

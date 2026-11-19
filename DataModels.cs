@@ -5,6 +5,8 @@ namespace DesktopFences
 {
     public sealed class GlobalConfig
     {
+        private Core.ThemeSettings _theme = new();
+
         [JsonPropertyName("FirstRunComplete")] public bool FirstRunComplete { get; set; } = true;
         [JsonPropertyName("ShowTaskbarIcon")] public bool ShowTaskbarIcon { get; set; } = true;
         [JsonPropertyName("RestoreFilesOnDelete")] public bool RestoreFilesOnDelete { get; set; } = true;
@@ -13,7 +15,12 @@ namespace DesktopFences
 
         [JsonPropertyName("ThemeId")] public string? ThemeId { get; set; }
 
-        [JsonPropertyName("Theme")] public Core.ThemeSettings Theme { get; set; } = new Core.ThemeSettings();
+        [JsonPropertyName("Theme")]
+        public Core.ThemeSettings Theme
+        {
+            get => _theme;
+            set => _theme = value ?? new Core.ThemeSettings();
+        }
     }
 
     public sealed class SnapshotData
@@ -32,17 +39,28 @@ namespace DesktopFences
 
     public sealed class FenceTab
     {
+        private List<string> _files = [];
+
         [JsonPropertyName("TabId")] public string TabId { get; set; } = System.Guid.NewGuid().ToString();
         [JsonPropertyName("Title")] public string Title { get; set; } = "New Tab";
         [JsonPropertyName("SortMethod")] public string SortMethod { get; set; } = "None";
         [JsonPropertyName("AutoSortExtensions")] public string AutoSortExtensions { get; set; } = "";
         [JsonPropertyName("IsPortal")] public bool IsPortal { get; set; } = false;
         [JsonPropertyName("PortalPath")] public string PortalPath { get; set; } = "";
-        [JsonPropertyName("Files")] public List<string> Files { get; set; } = [];
+
+        [JsonPropertyName("Files")]
+        public List<string> Files
+        {
+            get => _files;
+            set => _files = value ?? [];
+        }
     }
 
     public sealed class FenceData
     {
+        private List<FenceTab> _tabs = [];
+        private List<string> _files = [];
+
         [JsonPropertyName("Left")] public double Left { get; set; }
         [JsonPropertyName("Top")] public double Top { get; set; }
         [JsonPropertyName("Width")] public double Width { get; set; }
@@ -53,7 +71,13 @@ namespace DesktopFences
         [JsonPropertyName("ExpandedLeft")] public double ExpandedLeft { get; set; }
         [JsonPropertyName("ExpandedTop")] public double ExpandedTop { get; set; }
 
-        [JsonPropertyName("Tabs")] public List<FenceTab> Tabs { get; set; } = [];
+        [JsonPropertyName("Tabs")]
+        public List<FenceTab> Tabs
+        {
+            get => _tabs;
+            set => _tabs = value ?? [];
+        }
+
         [JsonPropertyName("ActiveTabIndex")] public int ActiveTabIndex { get; set; } = 0;
 
         [JsonPropertyName("HexColor")] public string HexColor { get; set; } = "#000000";
@@ -70,6 +94,12 @@ namespace DesktopFences
         [JsonPropertyName("AutoSortExtensions")] public string AutoSortExtensions { get; set; } = "";
         [JsonPropertyName("IsPortal")] public bool IsPortal { get; set; } = false;
         [JsonPropertyName("PortalPath")] public string PortalPath { get; set; } = "";
-        [JsonPropertyName("Files")] public List<string> Files { get; set; } = [];
+
+        [JsonPropertyName("Files")]
+        public List<string> Files
+        {
+            get => _files;
+            set => _files = value ?? [];
+        }
     }
 }

@@ -2,15 +2,11 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace DesktopFences.Core.Theming
 {
-
     public static class ThemeMigration
     {
-        private const string MigrationMarkerKey = "ThemeEngineSchema";
-
         private static readonly JsonSerializerOptions ReadOptions = new()
         {
             PropertyNameCaseInsensitive = true,
@@ -52,51 +48,6 @@ namespace DesktopFences.Core.Theming
                 var saved = ThemeCatalog.Save(forked);
 
                 ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' customised, forked to user theme '{saved.Id}'.");
-                return saved.Id;
-            }
-            catch (Exception ex)
-            {
-                ThemeLog.Error("Migrate", ex);
-                return ThemeCatalog.Default.Id;
-            }
-        }
-
-        public static async Task<string> ResolveThemeIdAsync(GlobalConfig? config)
-        {
-            try
-            {
-
-                if (!string.IsNullOrWhiteSpace(config?.ThemeId))
-                {
-                    if (string.Equals(config!.ThemeId, "fluid-glass", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(config.ThemeId, "Fluid Glass (Default)", StringComparison.OrdinalIgnoreCase))
-                        return ThemeCatalog.Default.Id;
-                    return config.ThemeId!;
-                }
-
-                var legacy = config?.Theme;
-                if (legacy is null || string.IsNullOrWhiteSpace(legacy.ThemeName))
-                    return ThemeCatalog.Default.Id;
-
-                if (IsDefaultFluidGlass(legacy))
-                {
-                    ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' -> default '{ThemeCatalog.Default.Id}'.");
-                    return ThemeCatalog.Default.Id;
-                }
-
-                var match = ThemeCatalog.Get(legacy.ThemeName);
-
-                bool nameMatches = string.Equals(match.Name, legacy.ThemeName, StringComparison.OrdinalIgnoreCase);
-                if (nameMatches && ColoursMatch(match, legacy))
-                {
-                    ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' -> built-in '{match.Id}'.");
-                    return match.Id;
-                }
-
-                var forked = FromLegacy(legacy, match);
-                var saved = await ThemeCatalog.SaveAsync(forked).ConfigureAwait(false);
-
-                ThemeLog.Info("Migrate", $"'{legacy.ThemeName}' forked to user theme '{saved.Id}'.");
                 return saved.Id;
             }
             catch (Exception ex)
@@ -171,29 +122,29 @@ namespace DesktopFences.Core.Theming
                 ? "My Theme (Imported)"
                 : $"{legacy.ThemeName} (Imported)";
 
-            if (!string.IsNullOrWhiteSpace(legacy.BackgroundColor))    basis.Colors.Background    = legacy.BackgroundColor;
-            if (!string.IsNullOrWhiteSpace(legacy.HeaderColor))        basis.Colors.Header        = legacy.HeaderColor;
-            if (!string.IsNullOrWhiteSpace(legacy.FontColor))          basis.Colors.TextPrimary   = legacy.FontColor;
+            if (!string.IsNullOrWhiteSpace(legacy.BackgroundColor)) basis.Colors.Background = legacy.BackgroundColor;
+            if (!string.IsNullOrWhiteSpace(legacy.HeaderColor)) basis.Colors.Header = legacy.HeaderColor;
+            if (!string.IsNullOrWhiteSpace(legacy.FontColor)) basis.Colors.TextPrimary = legacy.FontColor;
             if (!string.IsNullOrWhiteSpace(legacy.SecondaryFontColor)) basis.Colors.TextSecondary = legacy.SecondaryFontColor;
-            if (!string.IsNullOrWhiteSpace(legacy.AccentColor))        basis.Colors.Accent        = legacy.AccentColor;
-            if (!string.IsNullOrWhiteSpace(legacy.PrimaryColor))       basis.Colors.Primary       = legacy.PrimaryColor;
-            if (!string.IsNullOrWhiteSpace(legacy.SecondaryColor))     basis.Colors.Secondary     = legacy.SecondaryColor;
-            if (!string.IsNullOrWhiteSpace(legacy.SurfaceColor))       basis.Colors.Surface       = legacy.SurfaceColor;
-            if (!string.IsNullOrWhiteSpace(legacy.BorderColor))        basis.Colors.Border        = legacy.BorderColor;
-            if (!string.IsNullOrWhiteSpace(legacy.SuccessColor))       basis.Colors.Success       = legacy.SuccessColor;
-            if (!string.IsNullOrWhiteSpace(legacy.ErrorColor))         basis.Colors.Error         = legacy.ErrorColor;
-            if (!string.IsNullOrWhiteSpace(legacy.WarningColor))       basis.Colors.Warning       = legacy.WarningColor;
+            if (!string.IsNullOrWhiteSpace(legacy.AccentColor)) basis.Colors.Accent = legacy.AccentColor;
+            if (!string.IsNullOrWhiteSpace(legacy.PrimaryColor)) basis.Colors.Primary = legacy.PrimaryColor;
+            if (!string.IsNullOrWhiteSpace(legacy.SecondaryColor)) basis.Colors.Secondary = legacy.SecondaryColor;
+            if (!string.IsNullOrWhiteSpace(legacy.SurfaceColor)) basis.Colors.Surface = legacy.SurfaceColor;
+            if (!string.IsNullOrWhiteSpace(legacy.BorderColor)) basis.Colors.Border = legacy.BorderColor;
+            if (!string.IsNullOrWhiteSpace(legacy.SuccessColor)) basis.Colors.Success = legacy.SuccessColor;
+            if (!string.IsNullOrWhiteSpace(legacy.ErrorColor)) basis.Colors.Error = legacy.ErrorColor;
+            if (!string.IsNullOrWhiteSpace(legacy.WarningColor)) basis.Colors.Warning = legacy.WarningColor;
 
             if (!string.IsNullOrWhiteSpace(legacy.AccentColor)
                 && ThemeEngine.TryParseColor(legacy.AccentColor, out var accent))
             {
                 string Hex(byte a) => $"#{a:X2}{accent.R:X2}{accent.G:X2}{accent.B:X2}";
                 basis.Colors.SelectionStroke = Hex(0xFF);
-                basis.Colors.SelectionFill   = Hex(0x33);
-                basis.Colors.DropTarget      = Hex(0x55);
+                basis.Colors.SelectionFill = Hex(0x33);
+                basis.Colors.DropTarget = Hex(0x55);
             }
 
-            basis.Shape.CornerRadius = legacy.CornerRadius > 0 ? legacy.CornerRadius : 8;
+            basis.Shape.CornerRadius = legacy.CornerRadius >= 0 ? legacy.CornerRadius : 8;
             basis.Motion.RollUpStyle = legacy.RollUpAnimation.ToString();
 
             return basis;
@@ -227,7 +178,8 @@ namespace DesktopFences.Core.Theming
                     return null;
                 }
 
-                var parsed = JsonSerializer.Deserialize<GlobalConfig>(File.ReadAllText(configPath), ReadOptions);
+                using var fs = new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var parsed = JsonSerializer.Deserialize<GlobalConfig>(fs, ReadOptions);
 
                 if (parsed is null)
                     ThemeLog.Warn("ReadConfig", "Deserializer returned null for a non-empty config file.");
@@ -236,32 +188,6 @@ namespace DesktopFences.Core.Theming
             }
             catch (Exception ex)
             {
-                ThemeLog.Error("ReadConfig", ex);
-                return null;
-            }
-        }
-
-        public static async Task<GlobalConfig?> TryReadConfigAsync(string configPath)
-        {
-            try
-            {
-                if (!File.Exists(configPath))
-                {
-                    ThemeLog.Info("ReadConfig", $"No config at {configPath}; using defaults.");
-                    return null;
-                }
-
-                string json = await File.ReadAllTextAsync(configPath).ConfigureAwait(false);
-                var parsed = JsonSerializer.Deserialize<GlobalConfig>(json, ReadOptions);
-
-                if (parsed is null)
-                    ThemeLog.Warn("ReadConfig", "Deserializer returned null for a non-empty config file.");
-
-                return parsed;
-            }
-            catch (Exception ex)
-            {
-
                 ThemeLog.Error("ReadConfig", ex);
                 return null;
             }

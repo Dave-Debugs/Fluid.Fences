@@ -3,9 +3,22 @@ using System.Windows.Media;
 
 namespace DesktopFences.Core.Theming
 {
-
     internal static class ColorSpace
     {
+        private static readonly double[] SrgbToLinearLut = BuildSrgbToLinearLut();
+
+        private static double[] BuildSrgbToLinearLut()
+        {
+            var lut = new double[256];
+            for (int i = 0; i < 256; i++)
+            {
+                double s = i / 255.0;
+                lut[i] = s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+            }
+            return lut;
+        }
+
+        public static double ToLinear(byte channel) => SrgbToLinearLut[channel];
 
         public static double ToLinear(double srgb01) =>
             srgb01 <= 0.04045 ? srgb01 / 12.92 : Math.Pow((srgb01 + 0.055) / 1.055, 2.4);
@@ -15,7 +28,7 @@ namespace DesktopFences.Core.Theming
 
         public static (double L, double a, double b) RgbToOklab(byte r, byte g, byte b)
         {
-            double lr = ToLinear(r / 255.0), lg = ToLinear(g / 255.0), lb = ToLinear(b / 255.0);
+            double lr = SrgbToLinearLut[r], lg = SrgbToLinearLut[g], lb = SrgbToLinearLut[b];
 
             double l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
             double m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
@@ -55,9 +68,9 @@ namespace DesktopFences.Core.Theming
         }
 
         public static double RelativeLuminance(Color c) =>
-            0.2126 * ToLinear(c.R / 255.0) +
-            0.7152 * ToLinear(c.G / 255.0) +
-            0.0722 * ToLinear(c.B / 255.0);
+            0.2126 * SrgbToLinearLut[c.R] +
+            0.7152 * SrgbToLinearLut[c.G] +
+            0.0722 * SrgbToLinearLut[c.B];
 
         public static double Contrast(Color a, Color b)
         {

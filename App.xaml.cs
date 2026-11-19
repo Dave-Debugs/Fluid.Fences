@@ -16,6 +16,13 @@ using Application = System.Windows.Application;
 
 namespace DesktopFences
 {
+    public enum SnapshotResult
+    {
+        Succeeded,
+        NotFound,
+        Failed
+    }
+
     public partial class App : Application
     {
         private const int HOTKEY_ID = 9000;
@@ -23,9 +30,11 @@ namespace DesktopFences
         private const uint MOD_ALT = 0x0001;
         private const uint MOD_SHIFT = 0x0004;
         private const uint VK_Z = 0x5A;
+        private const long MaxLogFileBytes = 2 * 1024 * 1024;
 
         private NotifyIcon? _trayIcon;
         private bool _isZenModeActive;
+        private CancellationTokenSource? _displayChangeCts;
 
         public static bool PauseMediaOnRollup { get; set; } = true;
 
@@ -42,34 +51,40 @@ namespace DesktopFences
                 : string.Empty;
 
         private static string SingleInstanceMutexName => @"Local\FluidFences.SingleInstance" + InstanceSuffix;
-        private static string SurfaceSignalName       => @"Local\FluidFences.Surface" + InstanceSuffix;
-        private static string SettingsSignalName      => @"Local\FluidFences.OpenSettings" + InstanceSuffix;
-        private static string ExitSignalName          => @"Local\FluidFences.Exit" + InstanceSuffix;
+        private static string SurfaceSignalName => @"Local\FluidFences.Surface" + InstanceSuffix;
+        private static string SettingsSignalName => @"Local\FluidFences.OpenSettings" + InstanceSuffix;
+        private static string ExitSignalName => @"Local\FluidFences.Exit" + InstanceSuffix;
 
         private static Mutex? _singleInstanceMutex;
         private static bool _ownsMutex;
         private static EventWaitHandle? _surfaceSignal;
         private static EventWaitHandle? _settingsSignal;
         private static EventWaitHandle? _exitSignal;
+        private static ManualResetEventSlim? _listenerStopEvent;
         private static readonly SemaphoreSlim _snapshotGate = new(1, 1);
 
         private const string SettingsArgument = "--settings";
-        private const string ExitArgument     = "--exit";
+        private const string ExitArgument = "--exit";
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
-            this.DispatcherUnhandledException += (s, args) =>
+            this.DispatcherUnhandledException += (_, args) =>
             {
-                try
-                {
-                    Directory.CreateDirectory(ConfigFolder);
-                    File.AppendAllText(
-                        Path.Combine(ConfigFolder, "debug_exceptions.log"),
-                        $"[Unhandled] {args.Exception.Message}\n{args.Exception.StackTrace}\n");
-                }
-                catch { }
+                WriteLogLine("debug_exceptions.log", $"[Unhandled] {args.Exception.Message}\n{args.Exception.StackTrace}");
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                if (args.ExceptionObject is Exception ex)
+                    WriteLogLine("debug_exceptions.log", $"[AppDomainUnhandled] {ex.Message}\n{ex.StackTrace}");
+            };
+
+            TaskScheduler.UnobservedTaskException += (_, args) =>
+            {
+                WriteLogLine("debug_exceptions.log", $"[UnobservedTask] {args.Exception.Message}\n{args.Exception.StackTrace}");
+                args.SetObserved();
             };
 
             bool wantsSettings = e.Args.Any(a =>
@@ -125,6 +140,7 @@ namespace DesktopFences
             Directory.CreateDirectory(ConfigFolder);
             Directory.CreateDirectory(Path.Combine(ConfigFolder, "Fences"));
 
+#if DEBUG
             try
             {
                 System.Diagnostics.PresentationTraceSources.DataBindingSource.Switch.Level = System.Diagnostics.SourceLevels.Warning;
@@ -132,6 +148,7 @@ namespace DesktopFences
                     new System.Diagnostics.TextWriterTraceListener(Path.Combine(ConfigFolder, "wpf_trace.log")));
             }
             catch { }
+#endif
 
             InitialiseTheming();
 
@@ -150,7 +167,7 @@ namespace DesktopFences
 
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
 
-            RestoreSavedFences();
+            _ = RestoreSavedFencesAsync();
 
             if (wantsSettings) OpenSettings();
 
@@ -198,7 +215,6 @@ namespace DesktopFences
             }
             catch (Exception ex)
             {
-
                 LogError("SignalRunningInstance", ex);
             }
         }
@@ -220,11 +236,18 @@ namespace DesktopFences
         {
             try
             {
-                _surfaceSignal  = new EventWaitHandle(false, EventResetMode.AutoReset, SurfaceSignalName);
+                _surfaceSignal = new EventWaitHandle(false, EventResetMode.AutoReset, SurfaceSignalName);
                 _settingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, SettingsSignalName);
-                _exitSignal     = new EventWaitHandle(false, EventResetMode.AutoReset, ExitSignalName);
+                _exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ExitSignalName);
+                _listenerStopEvent = new ManualResetEventSlim(false);
 
-                var handles = new WaitHandle[] { _surfaceSignal, _settingsSignal, _exitSignal };
+                var handles = new WaitHandle[]
+                {
+                    _surfaceSignal,
+                    _settingsSignal,
+                    _exitSignal,
+                    _listenerStopEvent.WaitHandle
+                };
 
                 var listener = new Thread(() =>
                 {
@@ -243,10 +266,15 @@ namespace DesktopFences
                             }
                             else if (index == 2)
                             {
-                                Dispatcher.BeginInvoke(new Action(ExitApp));
+                                Dispatcher.BeginInvoke(new Action(() => _ = ExitAppAsync()));
+                                return;
+                            }
+                            else
+                            {
                                 return;
                             }
                         }
+                        catch (ObjectDisposedException) { return; }
                         catch (Exception ex) { LogError("SurfaceListener", ex); return; }
                     }
                 })
@@ -318,7 +346,7 @@ namespace DesktopFences
                 {
                     Core.Theming.ThemeEngine.Apply(Core.Theming.ThemeCatalog.Default, animate: false);
                 }
-                catch {  }
+                catch { }
             }
         }
 
@@ -331,36 +359,48 @@ namespace DesktopFences
             _ = PersistThemeIdAsync(theme.Id, mediaPath, mediaOpacity);
         }
 
-        private static System.Threading.Tasks.Task PersistThemeIdAsync(
+        private static Task<bool> PersistThemeIdAsync(
             string themeId, string? mediaPath = null, double? mediaOpacity = null)
             => ConfigStore.UpdateAsync(config =>
             {
                 config.ThemeId = themeId;
 
                 var resolved = Core.Theming.ThemeCatalog.Get(themeId);
-                config.Theme.ThemeName          = resolved.Name;
-                config.Theme.BackgroundColor    = resolved.Colors.Background    ?? config.Theme.BackgroundColor;
-                config.Theme.HeaderColor        = resolved.Colors.Header        ?? config.Theme.HeaderColor;
-                config.Theme.FontColor          = resolved.Colors.TextPrimary   ?? config.Theme.FontColor;
+                config.Theme.ThemeName = resolved.Name;
+                config.Theme.BackgroundColor = resolved.Colors.Background ?? config.Theme.BackgroundColor;
+                config.Theme.HeaderColor = resolved.Colors.Header ?? config.Theme.HeaderColor;
+                config.Theme.FontColor = resolved.Colors.TextPrimary ?? config.Theme.FontColor;
                 config.Theme.SecondaryFontColor = resolved.Colors.TextSecondary ?? config.Theme.SecondaryFontColor;
-                config.Theme.AccentColor        = resolved.Colors.Accent        ?? config.Theme.AccentColor;
+                config.Theme.AccentColor = resolved.Colors.Accent ?? config.Theme.AccentColor;
 
                 if (mediaPath is not null) config.Theme.BackgroundMediaPath = mediaPath;
                 if (mediaOpacity is double mo) config.Theme.MediaOpacity = mo;
             });
 
         private static readonly object _logLock = new();
-        public static void LogError(string context, Exception ex)
+
+        internal static void WriteLogLine(string fileName, string line)
         {
             try
             {
                 lock (_logLock)
                 {
-                    string logPath = Path.Combine(ConfigFolder, "app_error.log");
-                    File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {context}: {ex.Message}\n{ex.StackTrace}\n");
+                    Directory.CreateDirectory(ConfigFolder);
+                    string logPath = Path.Combine(ConfigFolder, fileName);
+                    if (File.Exists(logPath) && new FileInfo(logPath).Length >= MaxLogFileBytes)
+                    {
+                        string backup = logPath + ".old";
+                        File.Move(logPath, backup, overwrite: true);
+                    }
+                    File.AppendAllText(logPath, line + Environment.NewLine);
                 }
             }
             catch { }
+        }
+
+        public static void LogError(string context, Exception ex)
+        {
+            WriteLogLine("app_error.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {context}: {ex.Message}\n{ex.StackTrace}");
         }
 
         private async void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
@@ -370,9 +410,17 @@ namespace DesktopFences
                 DesktopFences.MainWindow.InvalidateScreenCache();
                 ThemeUtility.InvalidateWallpaperCache();
 
-                await System.Threading.Tasks.Task.Delay(1000);
+                _displayChangeCts?.Cancel();
+                _displayChangeCts?.Dispose();
+                var cts = new CancellationTokenSource();
+                _displayChangeCts = cts;
+
+                await Task.Delay(1000, cts.Token);
+                if (cts.IsCancellationRequested) return;
+
                 await Dispatcher.InvokeAsync(() =>
                 {
+                    if (cts.IsCancellationRequested) return;
                     var fences = Current.Windows.OfType<MainWindow>().ToArray();
                     foreach (var fence in fences)
                     {
@@ -380,6 +428,7 @@ namespace DesktopFences
                     }
                 });
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
                 LogError("DisplaySettingsChanged", ex);
@@ -396,21 +445,24 @@ namespace DesktopFences
             }
         }
 
+        public bool IsZenModeActive => _isZenModeActive;
+
         private void ToggleZenMode()
         {
             _isZenModeActive = !_isZenModeActive;
             foreach (Window window in Current.Windows)
             {
-                if (window is MainWindow fence)
+                if (window is MainWindow fence && !fence.IsPendingDeletion)
                 {
                     fence.Visibility = _isZenModeActive ? Visibility.Hidden : Visibility.Visible;
                 }
             }
         }
 
-        public static async Task SaveCurrentLayoutAsync()
+        public static async Task<SnapshotResult> SaveCurrentLayoutAsync()
         {
             await _snapshotGate.WaitAsync();
+            string? tempPath = null;
             try
             {
                 string snapshotPath = Path.Combine(ConfigFolder, "snapshot.json");
@@ -419,7 +471,7 @@ namespace DesktopFences
                 var fences = Current.Windows.OfType<MainWindow>().ToArray();
                 foreach (var fence in fences)
                 {
-                    if (fence.Visibility == Visibility.Visible)
+                    if (!fence.IsPendingDeletion && (fence.Visibility == Visibility.Visible || (Current is App app && app.IsZenModeActive)))
                     {
                         snapshots.Add(new SnapshotData
                         {
@@ -437,46 +489,61 @@ namespace DesktopFences
                     }
                 }
 
-                string tempPath = $"{snapshotPath}.{Guid.NewGuid():N}.tmp";
+                Directory.CreateDirectory(ConfigFolder);
+                tempPath = $"{snapshotPath}.{Guid.NewGuid():N}.tmp";
                 await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(snapshots, _jsonOptions));
                 File.Move(tempPath, snapshotPath, overwrite: true);
+                tempPath = null;
+                return SnapshotResult.Succeeded;
             }
-            catch (Exception ex) { LogError("SaveCurrentLayout", ex); }
+            catch (Exception ex)
+            {
+                if (tempPath is not null)
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                }
+                LogError("SaveCurrentLayout", ex);
+                return SnapshotResult.Failed;
+            }
             finally { _snapshotGate.Release(); }
         }
 
-        public static async Task RestoreLayoutSnapshotAsync()
+        public static async Task<SnapshotResult> RestoreLayoutSnapshotAsync()
         {
             await _snapshotGate.WaitAsync();
             try
             {
                 string snapshotPath = Path.Combine(ConfigFolder, "snapshot.json");
-                if (!File.Exists(snapshotPath)) return;
+                if (!File.Exists(snapshotPath)) return SnapshotResult.NotFound;
 
                 string json = await File.ReadAllTextAsync(snapshotPath);
                 var snapshots = JsonSerializer.Deserialize<List<SnapshotData>>(json);
 
-                if (snapshots is not null)
+                if (snapshots is null || snapshots.Count == 0) return SnapshotResult.NotFound;
+
+                var fences = Current.Windows.OfType<MainWindow>().ToArray();
+                foreach (var snap in snapshots)
                 {
-                    var fences = Current.Windows.OfType<MainWindow>().ToArray();
-                    foreach (var snap in snapshots)
+                    foreach (var fence in fences)
                     {
-                        foreach (var fence in fences)
+                        if (fence.GetFenceId() == snap.FenceId)
                         {
-                            if (fence.GetFenceId() == snap.FenceId)
-                            {
-                                fence.RestoreSnapshot(snap);
-                                break;
-                            }
+                            fence.RestoreSnapshot(snap);
+                            break;
                         }
                     }
                 }
+                return SnapshotResult.Succeeded;
             }
-            catch (Exception ex) { LogError("RestoreLayoutSnapshot", ex); }
+            catch (Exception ex)
+            {
+                LogError("RestoreLayoutSnapshot", ex);
+                return SnapshotResult.Failed;
+            }
             finally { _snapshotGate.Release(); }
         }
 
-        private static async void RestoreSavedFences()
+        private static async Task RestoreSavedFencesAsync()
         {
             try
             {
@@ -495,7 +562,7 @@ namespace DesktopFences
                             MainWindow restoredFence = new(fenceId);
                             restoredFence.Show();
 
-                            await System.Threading.Tasks.Task.Delay(50);
+                            await Task.Delay(50);
                         }
                         return;
                     }
@@ -522,18 +589,18 @@ namespace DesktopFences
             _trayIcon = new NotifyIcon { Icon = new Icon(iconStream), Visible = true, Text = "Fluid Fences" };
 
             var trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("Toggle Zen Mode", null, (s, e) => ToggleZenMode());
+            trayMenu.Items.Add("Toggle Zen Mode", null, (_, _) => ToggleZenMode());
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add("Create New Fence", null, (s, e) => CreateNewFence());
-            trayMenu.Items.Add("Create Folder Portal...", null, (s, e) => CreateNewPortal());
-            trayMenu.Items.Add("Auto-Organize Desktop", null, (s, e) => DesktopFences.MainWindow.AutoOrganizeDesktop());
-            trayMenu.Items.Add("Check for Updates", null, (s, e) => _ = Updater.CheckAndApplyUpdateAsync(silentCheck: false));
-            trayMenu.Items.Add("Open Settings", null, (s, e) => OpenSettings());
+            trayMenu.Items.Add("Create New Fence", null, (_, _) => CreateNewFence());
+            trayMenu.Items.Add("Create Folder Portal...", null, (_, _) => CreateNewPortal());
+            trayMenu.Items.Add("Auto-Organize Desktop", null, (_, _) => DesktopFences.MainWindow.AutoOrganizeDesktop());
+            trayMenu.Items.Add("Check for Updates", null, (_, _) => _ = Updater.CheckAndApplyUpdateAsync(silentCheck: false));
+            trayMenu.Items.Add("Open Settings", null, (_, _) => OpenSettings());
             trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add("Exit Fluid Fences", null, (s, e) => ExitApp());
+            trayMenu.Items.Add("Exit Fluid Fences", null, (_, _) => _ = ExitAppAsync());
 
             _trayIcon.ContextMenuStrip = trayMenu;
-            _trayIcon.DoubleClick += (s, e) => OpenSettings();
+            _trayIcon.DoubleClick += (_, _) => OpenSettings();
         }
 
         private void DisposeTrayIcon()
@@ -579,7 +646,6 @@ namespace DesktopFences
             var existing = Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
             if (existing is not null)
             {
-
                 existing.Show();
                 if (existing.WindowState == WindowState.Minimized)
                     existing.WindowState = WindowState.Normal;
@@ -598,12 +664,18 @@ namespace DesktopFences
             settings.Activate();
         }
 
-        private async void ExitApp()
+        private async Task ExitAppAsync()
         {
             DisposeTrayIcon();
 
             try
             {
+                foreach (SettingsWindow settings in Current.Windows.OfType<SettingsWindow>().ToList())
+                {
+                    try { settings.CommitPendingDeletions(); }
+                    catch (Exception ex) { LogError("ExitCommitDeletions", ex); }
+                }
+
                 foreach (MainWindow fence in Current.Windows.OfType<MainWindow>().ToList())
                 {
                     try { await fence.FlushPendingSaveAsync(); }
@@ -619,14 +691,20 @@ namespace DesktopFences
         {
             ComponentDispatcher.ThreadPreprocessMessage -= ComponentDispatcher_ThreadPreprocessMessage;
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
+            _displayChangeCts?.Cancel();
+            _displayChangeCts?.Dispose();
+            _displayChangeCts = null;
+
             NativeMethods.UnregisterHotKey(IntPtr.Zero, HOTKEY_ID);
             DisposeTrayIcon();
 
             try
             {
+                _listenerStopEvent?.Set();
                 _surfaceSignal?.Dispose();
                 _settingsSignal?.Dispose();
                 _exitSignal?.Dispose();
+                _listenerStopEvent?.Dispose();
                 if (_ownsMutex)
                 {
                     _singleInstanceMutex?.ReleaseMutex();
@@ -640,10 +718,9 @@ namespace DesktopFences
                 _surfaceSignal = null;
                 _settingsSignal = null;
                 _exitSignal = null;
+                _listenerStopEvent = null;
                 _singleInstanceMutex = null;
             }
-
-            DesktopFences.MainWindow.ReleaseShell();
 
             base.OnExit(e);
         }
